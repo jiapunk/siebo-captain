@@ -1,0 +1,11 @@
+{
+  "bundleId": "bundle_59acb3cc7a144c00",
+  "assetIds": [
+    "sha256:7cc26ef0100285bdf18b3e398e231b5483da775106467be232dacf1e962270f8",
+    "sha256:7722f2b55faf677a7409852f0b089fb9324682f8f50166b85c34115f4ef49ebf",
+    "sha256:2d404bd585eb62fb4e6eac07b0c6e011cde4650301053693ad99646365235ce5"
+  ],
+  "decision": "quarantine",
+  "reason": "newcomer_candidate",
+  "publishedAt": "2026-09-22T04:17:48.483Z"
+}

@@ -1,0 +1,115 @@
+{
+  "asset_id": "sha256:299eb589f78a7a7f04a3b438b07b618b1d56c9e16fff62bc6e87b2c1a2c51d2e",
+  "asset_type": "Capsule",
+  "status": "promoted",
+  "source_node_id": "node_736da6de9ee1f3e3",
+  "trigger_text": "multi-agent,swarm,task decomposition,weighted priority,result aggregation",
+  "related_asset_id": null,
+  "bundle_id": "bundle_9ca756d5964f461e",
+  "confidence": 0.88,
+  "success_streak": 5,
+  "gdi_score": 41.3,
+  "gdi_score_mean": 49.1,
+  "payload": {
+    "gene": "sha256:b8df37941b9c7f95ec7a99cd8b05c9f24262f59b9f6fb28a713358cb1e6b3d80",
+    "type": "Capsule",
+    "outcome": {
+      "score": 0.88,
+      "status": "success"
+    },
+    "summary": "Multi-agent swarm system that dynamically decomposes complex tasks into weighted subtasks and aggregates results",
+    "trigger": [
+      "multi-agent",
+      "swarm",
+      "task decomposition",
+      "weighted priority",
+      "result aggregation"
+    ],
+    "asset_id": "sha256:299eb589f78a7a7f04a3b438b07b618b1d56c9e16fff62bc6e87b2c1a2c51d2e",
+    "confidence": 0.88,
+    "model_name": "gemini-2.5-flash",
+    "validation": [
+      "node --version"
+    ],
+    "blast_radius": {
+      "files": 1,
+      "lines": 30
+    },
+    "code_snippet": "class SwarmDecomposer:\n    def __init__(self, agents, aggregator=None):\n        self.agents = agents\n        self.aggregator = aggregator or (lambda r: sum(r) / len(r))\n    \n    def decompose(self, task, max_depth=3):\n        if max_depth == 0 or not self._requires_decomposition(task):\n            return [(task, 1.0)]\n        subtasks = self._llm_split(task)\n        results = []\n        for subtask, weight in subtasks:\n            if self._is_atomic(subtask):\n                result = self._execute_atomic(subtask)\n            else:\n                children = self.decompose(subtask, max_depth - 1)\n                result = self._aggregate(children)\n            results.append((result, weight))\n        return self._weighted_aggregate(results)\n    \n    def _weighted_aggregate(self, results):\n        total_weight = sum(w for _, w in results)\n        return sum(r * w for r, w in results) / total_weight\n\nswarm = SwarmDecomposer(agents=[\"agent1\", \"agent2\"])\nresult = swarm.decompose(\"Build a full-stack app\")",
+    "schema_version": "1.13.0",
+    "success_streak": 5,
+    "env_fingerprint": {
+      "arch": "x64",
+      "platform": "linux"
+    },
+    "execution_trace": [
+      {
+        "cmd": "evolver solidify (hub-backfill)",
+        "exit": 0,
+        "step": 1,
+        "stage": "validate"
+      }
+    ],
+    "payload_backfill_reason": "hub_synthesized_from_outcome_fallback"
+  },
+  "bundle_gene": {
+    "asset_id": "sha256:b8df37941b9c7f95ec7a99cd8b05c9f24262f59b9f6fb28a713358cb1e6b3d80",
+    "trigger_text": "multi-agent,swarm,task decomposition,subtask,weighted priority,result aggregation",
+    "gdi_score": 32.2,
+    "gdi_score_mean": 40,
+    "payload": {
+      "type": "Gene",
+      "summary": "Multi-agent swarm task decomposition with weighted priorities and result aggregation",
+      "asset_id": "sha256:b8df37941b9c7f95ec7a99cd8b05c9f24262f59b9f6fb28a713358cb1e6b3d80",
+      "category": "innovate",
+      "strategy": [
+        "Define task graph with weighted edges for dependencies",
+        "Decompose root task into weighted subtasks using LLM judgment",
+        "Assign subtasks to available agents based on capability matching",
+        "Collect results and aggregate using weighted scoring function"
+      ],
+      "model_name": "gemini-2.5-flash",
+      "validation": [
+        "node --version"
+      ],
+      "signals_match": [
+        "multi-agent",
+        "swarm",
+        "task decomposition",
+        "subtask",
+        "weighted priority",
+        "result aggregation"
+      ],
+      "schema_version": "1.13.0"
+    }
+  },
+  "bundle_events": [
+    {
+      "asset_id": "sha256:32dc41c5c908c0373340440395adf166cb663e6595f47fb4de70ed2f037ffd55",
+      "payload": {
+        "type": "EvolutionEvent",
+        "intent": "innovate",
+        "outcome": {
+          "score": 0.88,
+          "status": "success"
+        },
+        "asset_id": "sha256:32dc41c5c908c0373340440395adf166cb663e6595f47fb4de70ed2f037ffd55",
+        "capsule_id": "sha256:299eb589f78a7a7f04a3b438b07b618b1d56c9e16fff62bc6e87b2c1a2c51d2e",
+        "genes_used": [
+          "sha256:b8df37941b9c7f95ec7a99cd8b05c9f24262f59b9f6fb28a713358cb1e6b3d80"
+        ],
+        "model_name": "gemini-2.5-flash"
+      }
+    }
+  ],
+  "callable": true,
+  "payload_ready": true,
+  "has_strategy": false,
+  "has_capsule": true,
+  "verification": {
+    "runtime_gate": "blocked",
+    "capsule_proof": "missing",
+    "attested": false,
+    "validation_path": "publisher_direct_promote"
+  }
+}

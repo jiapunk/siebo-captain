@@ -1,0 +1,214 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  emoji        String        @default("🙂")
+  tagline      String        @default("")
+  isBot        Boolean       @default(false)
+  email           String?   @unique
+  passwordHash    String?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  profile      AgentProfile?
+  teams        TeamMember[]
+  events       EventMember[]
+  sessions     Session[]
+  authTokens   AuthToken[]
+}
+
+// Email 驗證 / 密碼重設 一次性權杖（存 SHA-256 雜湊）
+model AuthToken {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // verify | reset
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// 登入工作階段（真 Auth；demo 身分切換仍走 sd_uid cookie）
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+}
+
+// ---------- 活動（黑客松場次） ----------
+model Event {
+  id        String        @id @default(cuid())
+  name      String
+  startsAt  DateTime
+  code      String        @unique
+  createdAt DateTime      @default(now())
+  members   EventMember[]
+  runs      MatchRun[]
+  teams     Team[]
+}
+
+model EventMember {
+  id       String @id @default(cuid())
+  eventId  String
+  event    Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+}
+
+model AgentProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       String   @default("draft") // draft | ready
+  interview    Json? // onboarding transcript: [{ role, content, ts }]
+  compiled     Json? // structured HackathonProfile
+  visibility   Json? // Record<string, boolean>
+  verification Json? // GitHub 驗證結果（GithubVerification）
+  updatedAt    DateTime @updatedAt
+}
+
+// 一次隊長對隊長互盤
+model MatchRun {
+  id        String   @id @default(cuid())
+  eventId   String?
+  event     Event?   @relation(fields: [eventId], references: [id])
+  userAId   String
+  userBId   String
+  status    String   @default("running") // running | completed | failed
+  events    Json     @default("[]") // live transcript events
+  reportA   Json? // userA's captain report
+  reportB   Json?
+  trace     Json? // 蜂群執行紀錄：parts 覆蓋率、重試、provider、延遲
+  createdAt DateTime @default(now())
+
+  @@index([userAId])
+  @@index([userBId])
+  @@index([eventId])
+}
+
+// 破冰卡（雷達上每位對象一張，可快取）
+model Icebreaker {
+  id        String   @id @default(cuid())
+  runId     String
+  viewerId  String
+  content   Json // { shared[], complement[], risk, openers[] }
+  createdAt DateTime @default(now())
+
+  @@unique([runId, viewerId])
+}
+
+// ---------- Agent Ledger（P2：跨活動戰績帳本，append-only） ----------
+model LedgerEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String // team_joined | connection | message_sent | icebreaker
+  value     Float    @default(1)
+  refId     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([kind])
+}
+
+// ---------- 持續聯絡（活動後仍可維繫的一對一連線） ----------
+model Connection {
+  id        String   @id @default(cuid())
+  userAId   String // 正規化：userId 字典序較小者放 A
+  userBId   String
+  status    String   @default("requested") // requested | connected
+  createdAt DateTime @default(now())
+  messages  ConnectMessage[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model ConnectMessage {
+  id           String     @id @default(cuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  senderId     String
+  content      String
+  createdAt    DateTime   @default(now())
+
+  @@index([connectionId])
+}
+
+// ---------- 黑客松組隊（N 對 N 聯盟） ----------
+model Team {
+  id        String        @id @default(cuid())
+  eventId   String?
+  event     Event?        @relation(fields: [eventId], references: [id])
+  status    String        @default("proposed") // proposed | assembled
+  score     Int
+  report    Json? // { rationale[], coverage[], risks[] }
+  createdAt DateTime      @default(now())
+  members   TeamMember[]
+  messages  TeamMessage[]
+}
+
+model TeamMember {
+  id       String @id @default(cuid())
+  teamId   String
+  team     Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     String @default("")
+  accepted Boolean @default(false)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model TeamMessage {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+}
+
+// ---------- 蜂群 Part：原子工作單元（覆蓋檢查、重試、決策軌跡） ----------
+model SwarmPart {
+  id         String   @id // 穩定 ID：q:<runId>:A、r:<runId>:B、team:<hypId>
+  runId      String? // 互盤 run（pair 類）
+  teamId     String? // 隊伍假設（team 類）
+  kind       String // phase | questions | answers | report | team_eval
+  label      String   @default("")
+  status     String   @default("pending") // pending | done | failed
+  provider   String? // jev | llm | mock
+  model      String?
+  latencyMs  Int?
+  inputTokens Int?
+  retries    Int      @default(0)
+  confidence Float?
+  retained   Boolean? // 決策值是否原樣進入最終交付（不被改寫）
+  answers    Json? // 型別化 slot（決策層原始答案）
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([runId])
+  @@index([teamId])
+  @@index([status])
+}
