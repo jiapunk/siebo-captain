@@ -292,6 +292,13 @@ body {
   color: var(--ink-soft);
 }
 
+@utility chip-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* ---------- 燈號 ---------- */
 @keyframes pulse-led {
   0%, 55% { opacity: 1; box-shadow: 0 0 6px currentColor; }

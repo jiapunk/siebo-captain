@@ -49,6 +49,14 @@ model Session {
 }
 
 // ---------- 活動（黑客松場次） ----------
+// 單體 baseline 對照：同一個 runId 的一次性 LLM 報告（vs 蜂群 6-Part）
+model SoloBaseline {
+  id        String   @id @default(cuid())
+  runId     String   @unique
+  result    Json
+  createdAt DateTime @default(now())
+}
+
 model Event {
   id        String        @id @default(cuid())
   name      String

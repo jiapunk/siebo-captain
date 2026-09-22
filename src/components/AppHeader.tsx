@@ -70,6 +70,7 @@ export default function AppHeader() {
     { href: "/agent", label: t("nav.ops"), code: "OPS", icon: IconCompass },
     { href: "/people", label: t("nav.radar"), code: "RADAR", icon: IconRadar },
     { href: "/teams", label: t("nav.squad"), code: "SQUAD", icon: IconUsers },
+    { href: "/compare", label: t("nav.compare"), code: "VS", icon: IconCompass },
     { href: "/profile", label: t("nav.id"), code: "ID", icon: IconUser },
   ];
 

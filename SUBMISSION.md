@@ -41,7 +41,7 @@
 | 通信协议 | 双方队长**结构化互访问答**（JSON 决策协议），全程逐字稿可稽核 |
 | 冲突解决 | 硬约束（角色缺口 / 死局概率）+ 双方独立评分取交集 |
 | 故障恢复 | per-Part retry + 决策层降级（Jev 挂→LLM→规则），流程永不中断 |
-| 质量/速度/成本取舍 | PARTS 6/6 · RETAIN 100%；单场 ~7s；`规则分 vs Jev 分` 每场可量化对照（Δ −2 ~ +16） |
+| 质量/速度/成本取舍 | **`/compare` 单双对照页**：同一对话纪录实跑「单体 1 次呼叫」vs「蜂群 6-Part」——现场数据 81(JEV) vs 76、46s vs 23s、10/10 栏位完整度、调用 6 vs 1；另有 `规则分 vs Jev 分` 每场 Δ 可量化 |
 | 「另一位 Agent 复核」 | 双方代理**独立评审**，双 ≥70 才配对；組隊採隔離假設評估 |
 | 「去 EvoMap 找别人试过的办法」 | 已注册节点并 `fetch` 学习 promoted 基因（花 4.13 credits） |
 | 「经验留下来」 | 发布 Gene+Capsule+EvolutionEvent（sha256 内容定址）；指挥台显示 `EVOMAP // LINKED` |
@@ -57,6 +57,7 @@ v2 bundle_59acb3cc7a144c00（GDI 35.0；含 code_snippet + execution_trace + 自
 ## 4. 现场可复现的数据
 
 - 互盘 5 场：`DECISION // JEV ×5 · JEV vs RULE Δ avg +9~+12`、每场 `PARTS 6/6 · RETAIN 100%`
+- **单体 vs 蜂群（同一场对话纪录）**：蜂群 81 分（JEV、6/6 Parts、46.0s）vs 单次 LLM 76 分（1 call、22.9s）→ 一致性分数差 5、五维平均差 9.2
 - 合作网络：9 节点 / 6 边 / 聚类系数 0.87（社交 vs 能力双信号模拟）
 - Agent Ledger：行为记帐 → 能力分（示例 53）
 - 测试：队长 14/14 · 月老 6/6（Playwright）；`tsc` 0 error；build ✅
