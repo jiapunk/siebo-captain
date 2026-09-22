@@ -48,3 +48,4 @@ prisma/*.db*
 prisma/demo-snapshots/
 test-results/
 playwright-report/
+!.env.example
