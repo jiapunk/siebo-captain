@@ -56,11 +56,11 @@ v2 bundle_59acb3cc7a144c00（GDI 35.0；含 code_snippet + execution_trace + 自
 
 ## 4. 现场可复现的数据
 
-- 互盘 5 场：`DECISION // JEV ×5 · JEV vs RULE Δ avg +9~+12`、每场 `PARTS 6/6 · RETAIN 100%`
+- 互盘 5 场：`DECISION // JEV ×5 · JEV vs RULE Δ avg +11.6`、每场 `PARTS 6/6 · RETAIN 100%`
 - **单体 vs 蜂群（同一场对话纪录）**：蜂群 81 分（JEV、6/6 Parts、46.0s）vs 单次 LLM 76 分（1 call、22.9s）→ 一致性分数差 5、五维平均差 9.2
 - 合作网络：9 节点 / 6 边 / 聚类系数 0.87（社交 vs 能力双信号模拟）
 - Agent Ledger：行为记帐 → 能力分（示例 53）
-- 测试：队长 14/14 · 月老 6/6（Playwright）；`tsc` 0 error；build ✅
+- 测试：队长 15/15 · 月老 7/7（Playwright）；`tsc` 0 error；build ✅
 - 四语系：繁中 / 简中 / EN / 日本語
 
 ## 5. 运行方式
