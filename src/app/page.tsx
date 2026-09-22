@@ -25,17 +25,36 @@ export default function Home() {
   const [eventName, setEventName] = useState("");
   const [eventCodeDb, setEventCodeDb] = useState("");
   const [name, setName] = useState("");
-  const [eventCode, setEventCode] = useState("TRAE26FALL");
+  const [eventCode, setEventCode] = useState("EVOTAVERN");
+  const [eventLive, setEventLive] = useState<{
+    live: boolean;
+    day: number;
+    totalDays: number | null;
+  } | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     api<{ users: UserRow[] }>("/api/users").then((d) => setUsers(d.users));
-    api<{ event: { name: string; code: string } | null }>("/api/events/current")
+    api<{
+      event: {
+        name: string;
+        code: string;
+        live: boolean;
+        day: number;
+        totalDays: number | null;
+      } | null;
+    }>("/api/events/current")
       .then((d) => {
         setEventName(d.event?.name ?? "");
         setEventCodeDb(d.event?.code ?? "");
         if (d.event?.code) setEventCode(d.event.code);
+        if (d.event)
+          setEventLive({
+            live: d.event.live,
+            day: d.event.day,
+            totalDays: d.event.totalDays,
+          });
       })
       .catch(() => {});
   }, []);
@@ -71,7 +90,7 @@ export default function Home() {
       const m = (e as Error).message;
       setCreateError(
         m === "invalid_event_code"
-          ? t("landing.errCode", { code: eventCodeDb || "TRAE26FALL" })
+          ? t("landing.errCode", { code: eventCodeDb || "EVOTAVERN" })
           : t("landing.errCreate"),
       );
     } finally {
@@ -114,6 +133,12 @@ export default function Home() {
           CODE {"// "}
           {eventCodeDb || "—"}
         </span>
+        {eventLive?.live && (
+          <span className="mono hidden text-[11px] tracking-wider text-phos sm:inline">
+            DAY {eventLive.day}
+            {eventLive.totalDays ? `/${eventLive.totalDays}` : ""} · LIVE
+          </span>
+        )}
         <span className="mono ml-auto hidden text-[11px] tracking-wider text-muted sm:inline">
           {llmMode === "real" ? "MODEL // DEEPSEEK" : "MODE // SANDBOX"}
         </span>
@@ -260,7 +285,7 @@ export default function Home() {
               )}
               <div className="mono mt-3 text-[11px] text-muted">
                 {t("landing.enlistHint", {
-                  code: eventCodeDb || "TRAE26FALL",
+                  code: eventCodeDb || "EVOTAVERN",
                 })}
               </div>
             </div>

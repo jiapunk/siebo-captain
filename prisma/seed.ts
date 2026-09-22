@@ -30,6 +30,9 @@ async function main() {
       startsAt: process.env.EVENT_STARTS_AT
         ? new Date(process.env.EVENT_STARTS_AT)
         : EVENT_SEED.startsAt,
+      endsAt: process.env.EVENT_ENDS_AT
+        ? new Date(process.env.EVENT_ENDS_AT)
+        : EVENT_SEED.endsAt,
     },
   });
 

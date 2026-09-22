@@ -9,9 +9,10 @@ export interface PersonaSeed {
 }
 
 export const EVENT_SEED = {
-  name: "TRAE 黑客松 2026 秋",
-  code: "TRAE26FALL",
-  startsAt: new Date("2026-10-24T09:00:00+08:00"),
+  name: "EvoTavern",
+  code: "EVOTAVERN",
+  startsAt: new Date("2026-09-21T09:00:00+08:00"),
+  endsAt: new Date("2026-09-24T23:59:59+08:00"),
 };
 
 export const HACK_PERSONAS: PersonaSeed[] = [

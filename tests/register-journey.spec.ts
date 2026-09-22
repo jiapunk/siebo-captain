@@ -22,7 +22,7 @@ test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼�
   await page.getByPlaceholder("怎麼稱呼你").fill("旅程測試員");
   await page.getByPlaceholder("you@example.com").fill(EMAIL);
   await page.getByPlaceholder("至少 8 個字元").fill(PW);
-  await page.getByPlaceholder("例：TRAE26FALL").fill(eventCode);
+  await page.getByPlaceholder("例：EVOTAVERN").fill(eventCode);
   await page.getByRole("button", { name: /註冊並開始訪談/ }).click();
   await page.waitForURL("**/onboarding");
 

@@ -53,6 +53,7 @@ model Event {
   id        String        @id @default(cuid())
   name      String
   startsAt  DateTime
+  endsAt    DateTime?
   code      String        @unique
   createdAt DateTime      @default(now())
   members   EventMember[]
