@@ -14,6 +14,19 @@ export const PAIR_PART_IDS = (runId: string) => [
   `r:${runId}:B`,
 ];
 
+/** Part 生命週期事件（即時蜂群面板用；透過 bus 廣播） */
+export interface PartLifecycleEvent {
+  partId: string;
+  kind: string;
+  label: string;
+  phase: "pending" | "running" | "retry" | "done" | "failed";
+  attempt?: number;
+  provider?: string | null;
+  latencyMs?: number;
+  retries?: number;
+  error?: string;
+}
+
 export interface PartTrace {
   provider?: string;
   model?: string;
@@ -31,6 +44,9 @@ export async function runPart<T>(
     label?: string;
     runId?: string;
     teamId?: string;
+    notify?: (ev: PartLifecycleEvent) => void;
+    /** demo 用：第一次嘗試強制失敗，展示「成員失效 → 重試接力」 */
+    faultOnce?: boolean;
   },
   fn: () => Promise<{ value: T; trace?: PartTrace }>,
 ): Promise<T> {
@@ -46,12 +62,27 @@ export async function runPart<T>(
       status: "pending",
     },
   });
+  opts.notify?.({
+    partId: opts.id,
+    kind: opts.kind,
+    label: opts.label ?? "",
+    phase: "pending",
+  });
 
   const maxAttempts = 2; // part 級重試：1 次原始 + 1 次重試
   let lastErr: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const t0 = Date.now();
+    opts.notify?.({
+      partId: opts.id,
+      kind: opts.kind,
+      label: opts.label ?? "",
+      phase: "running",
+      attempt,
+    });
     try {
+      if (opts.faultOnce && attempt === 1)
+        throw new Error("fault_injection_demo: simulated part failure");
       const { value, trace } = await fn();
       await prisma.swarmPart.update({
         where: { id: opts.id },
@@ -67,10 +98,28 @@ export async function runPart<T>(
           retries: attempt - 1,
         },
       });
+      opts.notify?.({
+        partId: opts.id,
+        kind: opts.kind,
+        label: opts.label ?? "",
+        phase: "done",
+        attempt,
+        provider: trace?.provider ?? null,
+        latencyMs: Date.now() - t0,
+        retries: attempt - 1,
+      });
       return value;
     } catch (e) {
       lastErr = e;
       if (attempt < maxAttempts) {
+        opts.notify?.({
+          partId: opts.id,
+          kind: opts.kind,
+          label: opts.label ?? "",
+          phase: "retry",
+          attempt,
+          error: (e as Error).message,
+        });
         await prisma.swarmPart.update({
           where: { id: opts.id },
           data: { retries: attempt, note: `retry after: ${(e as Error).message}` },
@@ -87,6 +136,13 @@ export async function runPart<T>(
       retries: maxAttempts - 1,
       note: `failed: ${(lastErr as Error)?.message ?? "unknown"}`,
     },
+  });
+  opts.notify?.({
+    partId: opts.id,
+    kind: opts.kind,
+    label: opts.label ?? "",
+    phase: "failed",
+    error: (lastErr as Error)?.message ?? "unknown",
   });
   throw lastErr;
 }
@@ -128,6 +184,53 @@ export function summarizeParts(
 }
 
 /** 批次取得多個 run 的 part 明細 */
+export interface PartRow {
+  id: string;
+  kind: string;
+  label: string;
+  status: string;
+  provider: string | null;
+  latencyMs: number | null;
+  retries: number;
+}
+
+/** 逐 Part 原始列（供前端回填蜂群面板；bus 即時事件優先） */
+export async function partRowsByRun(
+  runIds: string[],
+): Promise<Map<string, PartRow[]>> {
+  const map = new Map<string, PartRow[]>();
+  if (runIds.length === 0) return map;
+  const rows = await prisma.swarmPart.findMany({
+    where: { runId: { in: runIds } },
+    select: {
+      id: true,
+      runId: true,
+      kind: true,
+      label: true,
+      status: true,
+      provider: true,
+      latencyMs: true,
+      retries: true,
+    },
+    orderBy: { id: "asc" },
+  });
+  for (const runId of runIds) map.set(runId, []);
+  for (const r of rows) {
+    const list = map.get(r.runId ?? "");
+    if (list)
+      list.push({
+        id: r.id,
+        kind: r.kind,
+        label: r.label,
+        status: r.status,
+        provider: r.provider,
+        latencyMs: r.latencyMs,
+        retries: r.retries,
+      });
+  }
+  return map;
+}
+
 export async function partsByRun(runIds: string[]) {
   if (runIds.length === 0) return new Map<string, PartSummary>();
   const rows = await prisma.swarmPart.findMany({

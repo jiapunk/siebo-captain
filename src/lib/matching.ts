@@ -4,7 +4,7 @@ import { publish } from "./bus";
 import { publicProfile } from "./profile";
 import type { Locale } from "./i18n-dict";
 import { CONTENT } from "./content";
-import { runPart, type PartTrace } from "./swarm";
+import { runPart, type PartLifecycleEvent, type PartTrace } from "./swarm";
 import type { Prisma } from "@prisma/client";
 import {
   HACK_CANDIDATE_THRESHOLD,
@@ -107,6 +107,7 @@ export async function pickCandidates(
 export async function startMatching(
   userId: string,
   locale: Locale = "zh",
+  opts?: { faultInject?: boolean },
 ): Promise<string[]> {
   const me = await loadProfile(userId);
   if (!me) throw new Error("PROFILE_NOT_READY");
@@ -127,7 +128,7 @@ export async function startMatching(
     });
     runs.push(run.id);
     publish(`user:${userId}`, { type: "run_started", runId: run.id });
-    void runPair(run.id, me, cid, locale); // 背景執行
+    void runPair(run.id, me, cid, locale, opts); // 背景執行
   }
   return runs;
 }
@@ -150,11 +151,45 @@ export async function runPair(
   me: ProfileBundle,
   candidateId: string,
   locale: Locale = "zh",
+  opts?: { faultInject?: boolean },
 ) {
   const c = CONTENT[locale];
   try {
     const other = await loadProfile(candidateId);
     if (!other) throw new Error("candidate profile missing");
+
+    // 蜂群即時面板：Part 生命週期事件（廣播給雙方）
+    const notify = (ev: PartLifecycleEvent) => {
+      const payload = {
+        type: "part",
+        runId,
+        candidate: other.name,
+        candidateEmoji: other.emoji,
+        ...ev,
+      };
+      publish(`user:${me.userId}`, payload);
+      publish(`user:${other.userId}`, payload);
+    };
+    const partOpts = (
+      id: string,
+      kind: string,
+      label: string,
+    ): {
+      id: string;
+      kind: string;
+      label: string;
+      runId: string;
+      notify: (ev: PartLifecycleEvent) => void;
+      faultOnce: boolean;
+    } => ({
+      id,
+      kind,
+      label,
+      runId,
+      notify,
+      // demo：故障演練時讓「我的隊長作答」第一次嘗試失敗 → 重試接力
+      faultOnce: Boolean(opts?.faultInject && id === `a:${runId}:A`),
+    });
 
     const pubMe = publicProfile(me.compiled, me.visibility);
     const pubOther = publicProfile(other.compiled, other.visibility);
@@ -175,14 +210,14 @@ export async function runPair(
       model: process.env.LLM_MODEL,
     });
     const qs1 = await runPart(
-      { id: `q:${runId}:A`, kind: "questions", label: "我的隊長提問", runId },
+      partOpts(`q:${runId}:A`, "questions", "我的隊長提問"),
       async () => ({
         value: await llm.matchQuestions(me.compiled, pubOther, runId, locale),
         trace: providerOf(),
       }),
     );
     const ans1 = await runPart(
-      { id: `a:${runId}:B`, kind: "answers", label: "對方隊長作答", runId },
+      partOpts(`a:${runId}:B`, "answers", "對方隊長作答"),
       async () => ({
         value: await llm.matchAnswers(other.compiled, qs1, runId, locale),
         trace: providerOf(),
@@ -201,14 +236,14 @@ export async function runPair(
       text: fill(c.phaseReturn, { name: other.name }),
     });
     const qs2 = await runPart(
-      { id: `q:${runId}:B`, kind: "questions", label: "對方隊長提問", runId },
+      partOpts(`q:${runId}:B`, "questions", "對方隊長提問"),
       async () => ({
         value: await llm.matchQuestions(other.compiled, pubMe, runId, locale),
         trace: providerOf(),
       }),
     );
     const ans2 = await runPart(
-      { id: `a:${runId}:A`, kind: "answers", label: "我的隊長作答", runId },
+      partOpts(`a:${runId}:A`, "answers", "我的隊長作答"),
       async () => ({
         value: await llm.matchAnswers(me.compiled, qs2, runId, locale),
         trace: providerOf(),
@@ -229,7 +264,7 @@ export async function runPair(
 
     await appendEvent(runId, { type: "phase", text: c.phaseReport });
     const reportA: MatchReport = await runPart(
-      { id: `r:${runId}:A`, kind: "report", label: "我的隊長評估", runId },
+      partOpts(`r:${runId}:A`, "report", "我的隊長評估"),
       async () => {
         const value = await llm.matchReport(
           me.compiled,
@@ -264,7 +299,7 @@ export async function runPair(
     await pace();
 
     const reportB: MatchReport = await runPart(
-      { id: `r:${runId}:B`, kind: "report", label: "對方隊長評估", runId },
+      partOpts(`r:${runId}:B`, "report", "對方隊長評估"),
       async () => {
         const value = await llm.matchReport(
           other.compiled,

@@ -31,6 +31,15 @@ interface RunRow {
   matchId?: string | null;
   eventCount: number;
   parts: RunParts | null;
+  partRows?: {
+    id: string;
+    kind: string;
+    label: string;
+    status: string;
+    provider: string | null;
+    latencyMs: number | null;
+    retries: number;
+  }[];
 }
 
 export default function AgentPage() {
@@ -50,6 +59,7 @@ export default function AgentPage() {
     linked: boolean;
     nodeId?: string;
   } | null>(null);
+  const [faultInject, setFaultInject] = useState(false);
 
   useEffect(() => {
     fetch("/api/evomap")
@@ -126,6 +136,7 @@ export default function AgentPage() {
     try {
       const { runIds } = await api<{ runIds: string[] }>("/api/matching/run", {
         method: "POST",
+        body: JSON.stringify({ faultInject }),
       });
       await load();
       setExpanded(new Set(runIds));
@@ -196,14 +207,25 @@ export default function AgentPage() {
               </p>
             </div>
             {ready ? (
-              <button
-                onClick={launch}
-                disabled={launching}
-                className="btn btn-accent px-6 py-3 disabled:opacity-60"
-              >
-                <IconRadar size={17} />
-                {launching ? t("agent.deploying") : t("agent.deploy")}
-              </button>
+              <div className="flex flex-col items-end gap-1.5">
+                <button
+                  onClick={launch}
+                  disabled={launching}
+                  className="btn btn-accent px-6 py-3 disabled:opacity-60"
+                >
+                  <IconRadar size={17} />
+                  {launching ? t("agent.deploying") : t("agent.deploy")}
+                </button>
+                <label className="mono flex cursor-pointer items-center gap-1.5 text-[10px] tracking-wider text-muted">
+                  <input
+                    type="checkbox"
+                    checked={faultInject}
+                    onChange={(e) => setFaultInject(e.target.checked)}
+                    className="h-3 w-3 accent-[var(--phos)]"
+                  />
+                  故障演練（Part 首失敗 → 自動重試接力）
+                </label>
+              </div>
             ) : (
               <Link href="/onboarding" className="btn btn-accent px-6 py-3">
                 {t("agent.startInterview")}
@@ -335,6 +357,8 @@ export default function AgentPage() {
           </div>
         )}
 
+        <SwarmBoard runs={runs} />
+
         {runs.length > 0 && (
           <div className="tag mt-8 mb-3">RECON {"// "}{t("agent.recon").split("// ")[1]}</div>
         )}
@@ -432,5 +456,141 @@ export default function AgentPage() {
         </div>
       </main>
     </>
+  );
+}
+
+interface LivePart {
+  type?: string;
+  runId: string;
+  candidate?: string;
+  candidateEmoji?: string;
+  partId: string;
+  kind: string;
+  label: string;
+  phase: "pending" | "running" | "retry" | "done" | "failed";
+  attempt?: number;
+  provider?: string | null;
+  latencyMs?: number;
+  retries?: number;
+  error?: string;
+  ts?: number;
+}
+
+const PHASE_STYLE: Record<LivePart["phase"], string> = {
+  pending: "border-line text-muted",
+  running: "border-console-amber/60 text-console-amber animate-pulse",
+  retry: "border-alert text-alert",
+  done: "border-console-green/50 text-console-green",
+  failed: "border-alert text-alert",
+};
+
+/** 蜂群即時面板：bus SSE 即時事件 + DB 回填（重新載入也有畫面） */
+function SwarmBoard({ runs: runRows }: { runs: RunRow[] }) {
+  const [parts, setParts] = useState<Record<string, LivePart>>({});
+  const [runOrder, setRunOrder] = useState<string[]>([]);
+
+  // DB 回填：以最近 3 場的 partRows 補齊面板（bus 事件優先，不覆蓋）
+  useEffect(() => {
+    const recent = runRows.slice(0, 3);
+    if (recent.length === 0) return;
+    setParts((prev) => {
+      const next = { ...prev };
+      for (const r of recent) {
+        for (const pr of r.partRows ?? []) {
+          if (next[pr.id]) continue;
+          next[pr.id] = {
+            runId: r.id,
+            candidate: r.other?.name,
+            candidateEmoji: r.other?.emoji,
+            partId: pr.id,
+            kind: pr.kind,
+            label: pr.label,
+            phase:
+              pr.status === "done"
+                ? "done"
+                : pr.status === "failed"
+                  ? "failed"
+                  : "pending",
+            provider: pr.provider,
+            latencyMs: pr.latencyMs ?? undefined,
+            retries: pr.retries,
+          };
+        }
+      }
+      return next;
+    });
+    setRunOrder((prev) => {
+      const ids = recent.map((r) => r.id).filter((id) => !prev.includes(id));
+      return ids.length ? [...ids, ...prev] : prev;
+    });
+  }, [runRows]);
+
+  useEffect(() => {
+    const es = new EventSource("/api/bus/user");
+    es.onmessage = (e) => {
+      try {
+        const m = JSON.parse(e.data) as LivePart;
+        if (m.type !== "part") return;
+        setParts((prev) => ({ ...prev, [m.partId]: { ...m, ts: Date.now() } }));
+        setRunOrder((prev) => (prev.includes(m.runId) ? prev : [...prev, m.runId]));
+      } catch {
+        /* ignore */
+      }
+    };
+    return () => es.close();
+  }, []);
+
+  const runs = runOrder.slice(-3);
+  if (runs.length === 0) return null;
+
+  return (
+    <div className="card cut mt-3 border-console-soft p-4">
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <span className="mono text-[11px] tracking-[0.16em] text-console-green">
+          SWARM {"//"} LIVE PARTS
+        </span>
+        <span className="text-[11px] text-muted">
+          每個 Part 隔離執行、獨立重試；開啟「故障演練」看成員失效後如何接力
+        </span>
+      </div>
+      <div className="space-y-2">
+        {runs.map((runId) => {
+          const mine = Object.values(parts)
+            .filter((p) => p.runId === runId)
+            .sort((x, y) => x.partId.localeCompare(y.partId));
+          const done = mine.filter((p) => p.phase === "done").length;
+          const retries = mine.reduce((acc, p) => acc + (p.retries ?? 0), 0);
+          const candidate = mine[0]?.candidate ?? "?";
+          const emoji = mine[0]?.candidateEmoji ?? "·";
+          return (
+            <div key={runId} className="flex flex-wrap items-center gap-1.5">
+              <span className="mono w-32 shrink-0 text-[11px] text-ink-soft">
+                {emoji} {candidate}
+              </span>
+              {mine.map((p) => (
+                <span
+                  key={p.partId}
+                  title={`${p.label} · ${p.phase}${p.error ? ` · ${p.error}` : ""}`}
+                  className={`mono inline-flex min-w-[104px] flex-col rounded border bg-panel-2/40 px-1.5 py-1 text-[9px] leading-tight ${PHASE_STYLE[p.phase]}`}
+                >
+                  <span className="truncate">{p.label}</span>
+                  <span className="opacity-75">
+                    {p.phase === "running"
+                      ? `attempt ${p.attempt ?? 1}`
+                      : p.phase === "retry"
+                        ? "重試接力…"
+                        : `${p.provider ?? "—"}${p.latencyMs ? ` ${p.latencyMs}ms` : ""}${p.retries ? ` · R${p.retries}` : ""}`}
+                  </span>
+                </span>
+              ))}
+              <span className="mono text-[10px] text-muted">
+                {done}/{mine.length}
+                {retries > 0 && <span className="text-alert"> · RETRY {retries}</span>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

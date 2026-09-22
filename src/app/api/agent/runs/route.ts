@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
 import type { MatchReport } from "@/lib/types";
-import { partsByRun } from "@/lib/swarm";
+import { partRowsByRun, partsByRun } from "@/lib/swarm";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,7 @@ export async function GET() {
   const otherMap = new Map(others.map((o) => [o.id, o]));
 
   const partsMap = await partsByRun(runs.map((r) => r.id));
+  const partRowsMap = await partRowsByRun(runs.map((r) => r.id));
 
   return NextResponse.json({
     runs: runs.map((r) => {
@@ -41,6 +42,7 @@ export async function GET() {
         createdAt: r.createdAt,
         eventCount: ((r.events as unknown as unknown[]) ?? []).length,
         parts: partsMap.get(r.id) ?? null,
+        partRows: partRowsMap.get(r.id) ?? [],
       };
     }),
   });

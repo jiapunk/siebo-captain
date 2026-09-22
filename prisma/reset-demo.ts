@@ -11,6 +11,8 @@ async function main() {
   await prisma.teamMember.deleteMany();
   await prisma.team.deleteMany();
   await prisma.icebreaker.deleteMany();
+  await prisma.swarmPart.deleteMany();
+  await prisma.soloBaseline.deleteMany();
   await prisma.matchRun.deleteMany();
   await prisma.eventMember.deleteMany({
     where: { user: { isBot: false, id: { not: { startsWith: "seed-" } } } },
