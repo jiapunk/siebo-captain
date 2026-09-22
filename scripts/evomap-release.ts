@@ -28,7 +28,7 @@ import { buildTeamAssemblyAssets, publishBundle, validateBundle } from "../src/l
     provider,
     runId: run?.id ?? "no-run",
   });
-  const [gene, capsule, event] = assets;
+  const [gene, capsule] = assets;
   console.log(`[evomap] bundle: gene ${gene.asset_id.slice(0, 23)}… / capsule ${capsule.asset_id.slice(0, 23)}…`);
   console.log(`[evomap] teams=${teams.length} avg=${avgScore.toFixed(1)} provider=${provider}`);
 
