@@ -1,32 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { api } from "@/lib/client";
 import { useI18n } from "@/lib/i18n";
 import { IconCheck, IconLock } from "@/components/Icons";
 
-export default function VerifyPage() {
-  const { t } = useI18n();
-  const [state, setState] = useState<"working" | "ok" | "fail">("working");
-
-  useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("token");
-    if (!token) {
-      setState("fail");
-      return;
-    }
+/**
+ * 同一個 token 只送一次（token 是一次性的；StrictMode 下 effect 會跑兩次，第二次會拿到 invalid_token）。
+ * 只有網路／5xx 錯誤才重試一次；400 invalid_token 重試也不會成功。
+ */
+const inflight = new Map<string, Promise<unknown>>();
+function verifyOnce(token: string): Promise<unknown> {
+  let p = inflight.get(token);
+  if (!p) {
     const attempt = () =>
       api("/api/auth/verify", {
         method: "POST",
         body: JSON.stringify({ token }),
       });
-    attempt()
-      .catch(() => new Promise((r) => setTimeout(r, 1500)).then(attempt))
-      .then(() => setState("ok"))
-      .catch(() => setState("fail"));
-  }, []);
+    p = attempt().catch((e: Error & { status?: number }) =>
+      e.status && e.status < 500
+        ? Promise.reject(e)
+        : new Promise((r) => setTimeout(r, 1500)).then(attempt),
+    );
+    inflight.set(token, p);
+  }
+  return p;
+}
+
+export default function VerifyPage() {
+  // useSearchParams 需要 Suspense 邊界（靜態預渲染時會退回 client 端）
+  return (
+    <Suspense fallback={<AppHeader />}>
+      <VerifyInner />
+    </Suspense>
+  );
+}
+
+function VerifyInner() {
+  const { t } = useI18n();
+  const token = useSearchParams().get("token");
+  const [result, setResult] = useState<"ok" | "fail" | null>(null);
+  // 沒有 token 直接是失敗，不必在 effect 裡同步 setState
+  const state: "working" | "ok" | "fail" = !token ? "fail" : (result ?? "working");
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    verifyOnce(token)
+      .then(() => !cancelled && setResult("ok"))
+      .catch(() => !cancelled && setResult("fail"));
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   return (
     <>

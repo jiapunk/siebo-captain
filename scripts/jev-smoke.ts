@@ -1,10 +1,12 @@
 import "dotenv/config"; // 讀取 .env 的 JEV_API_KEY 等設定（已存在的環境變數優先，不會被覆寫）
 
 /**
- * Jev 決策層煙霧測試
+ * Jev 決策層煙霧測試（手動實打用；會讀 .env，已設定的環境變數優先）
  *   npx tsx scripts/jev-smoke.ts            # 用 .env 的 JEV_API_KEY（無 key → 規則層）
- *   npx tsx scripts/jev-smoke.ts --bad-key  # 故意用壞 key，驗證 fallback
+ *   npx tsx scripts/jev-smoke.ts --bad-key  # 故意用壞 key，驗證 fallback（未設 JEV_BASE_URL 時會真的打 Jev 拿 401）
  *   npx tsx scripts/jev-smoke.ts --report   # 另外跑一次完整報告合成
+ * 輸出第一行附 jevBase=/llmBase=，讓呼叫端（tests/decision.spec.ts）確認這次是否指向本機黑洞、沒有連外。
+ * 離線、可重現的逐情境驗證（逐題 fallback、覆蓋重試、斷路器、逾時）請用 scripts/verify-decision.ts。
  */
 async function main() {
   process.env.LLM_PROVIDER = process.env.LLM_PROVIDER || "mock";
@@ -55,7 +57,7 @@ async function main() {
 
   console.log("── decide() ──");
   console.log(
-    `chain=[${decisionChain().join(">")}] source=${res.source} model=${res.model ?? "-"} note=${res.note ?? "-"} ms=${Date.now() - t0} inputTokens=${res.inputTokens ?? "-"}`,
+    `chain=[${decisionChain().join(">")}] source=${res.source} model=${res.model ?? "-"} note=${res.note ?? "-"} ms=${Date.now() - t0} inputTokens=${res.inputTokens ?? "-"} jevBase=${process.env.JEV_BASE_URL || "https://api.typesafe.ai/v1"} llmBase=${process.env.LLM_BASE_URL || "https://api.deepseek.com"}`,
   );
   console.log(JSON.stringify(res.answers, null, 2));
 

@@ -1,13 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import ScoreRing from "@/components/ScoreRing";
-import RunStream from "@/components/RunStream";
+import RunStream, { useRunStreams } from "@/components/RunStream";
 import { IconRadar } from "@/components/Icons";
-import { api, timeAgo, useMe, useUserBus } from "@/lib/client";
+import {
+  api,
+  ApiError,
+  apiErrorText,
+  timeAgo,
+  useMe,
+  useUserBus,
+  type BusEvent,
+} from "@/lib/client";
 import { useI18n } from "@/lib/i18n";
 import type { MatchReport } from "@/lib/types";
 
@@ -17,9 +25,21 @@ interface RunParts {
   failed: number;
   pending: number;
   retries: number;
+  /** 遠端失敗後改用本機腳本完成的 Part 數 */
+  fallbacks?: number;
   retainedPct: number | null;
   providers: string[];
   avgLatencyMs: number | null;
+}
+
+interface PartRow {
+  id: string;
+  kind: string;
+  label: string;
+  status: string;
+  provider: string | null;
+  latencyMs: number | null;
+  retries: number;
 }
 
 interface RunRow {
@@ -31,16 +51,10 @@ interface RunRow {
   matchId?: string | null;
   eventCount: number;
   parts: RunParts | null;
-  partRows?: {
-    id: string;
-    kind: string;
-    label: string;
-    status: string;
-    provider: string | null;
-    latencyMs: number | null;
-    retries: number;
-  }[];
+  partRows?: PartRow[];
 }
+
+const sourceLabel = (s: string) => (s === "mock" ? "LOCAL" : s.toUpperCase());
 
 export default function AgentPage() {
   const { me, loading } = useMe();
@@ -68,27 +82,47 @@ export default function AgentPage() {
       .catch(() => {});
   }, []);
 
-  const load = useCallback(async () => {
-    try {
-      const d = await api<{ runs: RunRow[] }>("/api/agent/runs");
-      setRuns(d.runs);
-      return d.runs;
-    } catch {
-      return [];
-    }
+  // 請求序號：回應亂序時只套用比「已套用」更新的那一個，舊回應不會蓋掉新狀態
+  const reqSeq = useRef(0);
+  const appliedSeq = useRef(0);
+  const load = useCallback(() => {
+    const seq = ++reqSeq.current;
+    return api<{ runs: RunRow[] }>("/api/agent/runs")
+      .then((d) => {
+        if (seq > appliedSeq.current) {
+          appliedSeq.current = seq;
+          setRuns(d.runs);
+        }
+        return d.runs;
+      })
+      .catch(() => [] as RunRow[]);
   }, []);
 
   useEffect(() => {
     if (!loading && !me) router.replace("/");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, me]);
+  }, [loading, me, router]);
 
   useEffect(() => {
-    if (me) load();
+    if (me) void load();
   }, [me, load]);
 
-  useUserBus(() => {
-    load();
+  // 共用 user bus：part 事件也會更新 PARTS 計數，但防抖（300ms，最長 1.5s 一次），一次出發只重抓十來次
+  useUserBus(
+    () => {
+      void load();
+    },
+    { types: ["part", "run_started", "refresh", "ready"] },
+  );
+
+  // 展開中的 run → 一條多工逐字稿串流（進行中的排前面）
+  const streamIds = useMemo(() => {
+    const order = new Map(runs.map((r, i) => [r.id, (r.status === "running" ? 0 : 1000) + i]));
+    return Array.from(expanded).sort(
+      (a, b) => (order.get(a) ?? -1) - (order.get(b) ?? -1),
+    );
+  }, [expanded, runs]);
+  const streams = useRunStreams(streamIds, () => {
+    void load();
   });
 
   async function joinEvent() {
@@ -101,8 +135,8 @@ export default function AgentPage() {
         { method: "POST", body: JSON.stringify({ code: eventCode.trim() }) },
       );
       setJoinedEvent(event.name);
-    } catch {
-      setMsg(t("agent.joinErr"));
+    } catch (e) {
+      setMsg(apiErrorText(e, t, "agent.joinErr", { not_found: "agent.joinErr" }));
     } finally {
       setJoining(false);
     }
@@ -116,13 +150,11 @@ export default function AgentPage() {
       await api<{ teamIds: string[] }>("/api/teams/assemble", { method: "POST" });
       router.push("/teams");
     } catch (e) {
-      const m = (e as Error).message;
       setMsg(
-        m === "not_enough_candidates"
-          ? t("agent.assembleErrCandidates")
-          : m === "email_unverified"
-            ? t("auth.gateBlocked")
-            : t("agent.assembleErr"),
+        apiErrorText(e, t, "agent.assembleErr", {
+          not_enough_candidates: "agent.assembleErrCandidates",
+          already_running: "err.assembleRunning",
+        }),
       );
     } finally {
       setAssembling(false);
@@ -141,16 +173,20 @@ export default function AgentPage() {
       await load();
       setExpanded(new Set(runIds));
     } catch (e) {
-      const m = (e as Error).message;
       setMsg(
-        m === "no_candidates"
-          ? t("agent.launchErrNone")
-          : m === "profile_not_ready"
-            ? t("agent.launchErrProfile")
-            : m === "email_unverified"
-              ? t("auth.gateBlocked")
-              : t("agent.launchErr"),
+        apiErrorText(e, t, "agent.launchErr", {
+          no_candidates: "agent.launchErrNone",
+          profile_not_ready: "agent.launchErrProfile",
+        }),
       );
+      // 上一輪還在跑：把那幾場展開，直接看進度
+      if (e instanceof ApiError && e.code === "already_running") {
+        const ids = Array.isArray(e.body.runIds)
+          ? (e.body.runIds as unknown[]).filter((x): x is string => typeof x === "string")
+          : [];
+        await load();
+        if (ids.length) setExpanded((prev) => new Set([...prev, ...ids]));
+      }
     } finally {
       setLaunching(false);
     }
@@ -161,7 +197,7 @@ export default function AgentPage() {
       <>
         <AppHeader />
         <main className="flex flex-1 items-center justify-center p-8 text-muted">
-          {loading ? "載入中…" : "請先選擇身分"}
+          {loading ? t("common.loading") : t("common.pickIdentity")}
         </main>
       </>
     );
@@ -189,7 +225,7 @@ export default function AgentPage() {
             <div className="min-w-0 flex-1 text-center sm:text-left">
               <div className="tag flex items-center justify-center gap-2 sm:justify-start">
                 <span className={`led ${activeRuns.length ? "led-live" : "led-idle"}`} />
-                OPS {"// "}{t("agent.tag").split("// ")[1]}
+                {t("agent.tag")}
               </div>
               <h1 className="font-display mt-1.5 text-xl font-black">
                 {activeRuns.length > 0
@@ -223,7 +259,7 @@ export default function AgentPage() {
                     onChange={(e) => setFaultInject(e.target.checked)}
                     className="h-3 w-3 accent-[var(--phos)]"
                   />
-                  故障演練（Part 首失敗 → 自動重試接力）
+                  {t("agent.faultInject")}
                 </label>
               </div>
             ) : (
@@ -240,21 +276,19 @@ export default function AgentPage() {
               EVOMAP {"//"}{" "}
               {evomap.enabled
                 ? evomap.linked
-                  ? `LINKED ${evomap.nodeId}`
-                  : "ENABLED · 未綁定（npm run evomap:register）"
-                : "OFF（opt-in：EVOMAP_ENABLED=1）"}
+                  ? `LINKED ${evomap.nodeId ?? ""}`
+                  : t("agent.evomapUnlinked")
+                : t("agent.evomapOff")}
             </span>
             {evomap.enabled && evomap.linked && (
-              <span className="text-console-dim">
-                GEP-A2A · Gene+Capsule 發佈（npm run evomap:release）
-              </span>
+              <span className="text-console-dim">{t("agent.evomapRelease")}</span>
             )}
           </div>
         )}
 
         {runs.length > 0 && (
           <div className="mono mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border border-line bg-panel-2/40 px-3 py-2 text-[10px] tracking-wider text-muted">
-            <span>
+            <span title={t("agent.decisionHint")}>
               DECISION {"// "}
               {(() => {
                 const withSrc = doneRuns.filter((x) => x.myReport?.decisionSource);
@@ -268,7 +302,25 @@ export default function AgentPage() {
                 return parts.length ? parts.join(" · ") : "—";
               })()}
             </span>
-            <span>
+            <span title={t("agent.fallbackHint")}>
+              FALLBACK {"// "}
+              {(() => {
+                const remote = doneRuns.filter(
+                  (x) =>
+                    x.myReport?.decisionSource &&
+                    x.myReport.decisionSource !== "mock" &&
+                    x.myReport.decisionCoverage,
+                );
+                if (!remote.length) return "—";
+                const fb = remote.reduce((a, x) => a + (x.myReport!.fallbackCount ?? 0), 0);
+                const total = remote.reduce(
+                  (a, x) => a + (x.myReport!.decisionCoverage?.expected ?? 0),
+                  0,
+                );
+                return `${fb}/${total}`;
+              })()}
+            </span>
+            <span title={t("agent.deltaHint")}>
               JEV vs RULE Δ{" "}
               {(() => {
                 const deltas = doneRuns
@@ -281,14 +333,17 @@ export default function AgentPage() {
                 if (!deltas.length) return "—";
                 const avg =
                   deltas.reduce((s, d) => s + d, 0) / deltas.length;
-                return `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}（n=${deltas.length}）`;
+                return `${avg >= 0 ? "+" : ""}${avg.toFixed(1)} (n=${deltas.length})`;
               })()}
             </span>
           </div>
         )}
 
         {msg && (
-          <div className="rise-in mt-3 border border-amber bg-amber-soft p-3 text-center text-sm text-ink-soft">
+          <div
+            role="alert"
+            className="rise-in mt-3 border border-amber bg-amber-soft p-3 text-center text-sm text-ink-soft"
+          >
             {msg}
           </div>
         )}
@@ -296,7 +351,7 @@ export default function AgentPage() {
         {!me.event && !joinedEvent && (
           <div className="card cut rise-in mt-3">
             <div className="p-4">
-              <div className="tag mb-1.5">SECTOR {"// "}{t("agent.joinTag").split("// ")[1]}</div>
+              <div className="tag mb-1.5">{t("agent.joinTag")}</div>
               <p className="text-xs leading-relaxed text-ink-soft">
                 {t("agent.joinDesc")}
               </p>
@@ -329,7 +384,7 @@ export default function AgentPage() {
           <div className="card cut rise-in mt-4 border-accent">
             <div className="flex flex-col items-center gap-3 p-5 sm:flex-row">
               <span className="mono text-[11px] tracking-[0.16em] text-accent-deep">
-                SQUAD FORMATION READY
+                {t("agent.squadReady")}
               </span>
               <div className="min-w-0 flex-1 text-center text-sm text-ink-soft sm:text-left">
                 {t("agent.assembleDesc", { n: qualifying.length })}
@@ -360,12 +415,18 @@ export default function AgentPage() {
         <SwarmBoard runs={runs} />
 
         {runs.length > 0 && (
-          <div className="tag mt-8 mb-3">RECON {"// "}{t("agent.recon").split("// ")[1]}</div>
+          <div className="tag mt-8 mb-3">{t("agent.recon")}</div>
         )}
 
         <div className="space-y-3">
           {[...activeRuns, ...doneRuns].map((r) => {
             const isOpen = expanded.has(r.id);
+            const stream = streams[r.id];
+            const rep = r.myReport;
+            const retention = rep?.retention;
+            const cov = rep?.decisionCoverage;
+            const remoteSrc =
+              rep?.decisionSource && rep.decisionSource !== "mock" ? rep.decisionSource : null;
             return (
               <div key={r.id} className="card cut">
                 <button
@@ -375,6 +436,7 @@ export default function AgentPage() {
                     else next.add(r.id);
                     setExpanded(next);
                   }}
+                  aria-expanded={isOpen}
                   className="flex w-full items-center gap-3.5 p-4 text-left transition hover:bg-panel-2/60"
                 >
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center border border-line-strong bg-base text-xl">
@@ -385,7 +447,7 @@ export default function AgentPage() {
                       <span className="font-bold">{r.other.name}</span>
                       {r.other.isBot && (
                         <span className="mono border border-line px-1.5 py-0.5 text-[9px] tracking-wider text-muted">
-                          SIM
+                          {t("agent.sim")}
                         </span>
                       )}
                       {r.status === "running" && (
@@ -396,9 +458,14 @@ export default function AgentPage() {
                           </span>
                         </span>
                       )}
+                      {r.status === "failed" && (
+                        <span className="mono border border-alert px-1.5 py-0.5 text-[9px] tracking-wider text-alert">
+                          {t("agent.failed")}
+                        </span>
+                      )}
                     </div>
                     <div className="mono mt-1 text-[10px] tracking-wider text-muted">
-                      {timeAgo(r.createdAt)} {"// "}
+                      {timeAgo(r.createdAt, t)} {"// "}
                       {r.status === "running"
                         ? t("agent.transmitting")
                         : t("agent.signals", { n: r.eventCount })}
@@ -414,19 +481,46 @@ export default function AgentPage() {
                         >
                           PARTS {r.parts.done}/{r.parts.expected}
                         </span>
-                        {r.parts.retries > 0 && (
-                          <span className="text-amber">
-                            RETRY {r.parts.retries}
+                        <span
+                          title={t("agent.retryHint")}
+                          className={r.parts.retries > 0 ? "text-amber" : "text-muted"}
+                        >
+                          RETRY {r.parts.retries}
+                        </span>
+                        {(r.parts.fallbacks ?? 0) > 0 && (
+                          <span title={t("agent.partFallbackHint")} className="text-amber">
+                            LOCAL-FB {r.parts.fallbacks}
                           </span>
                         )}
-                        {r.parts.retainedPct !== null && (
-                          <span className="text-muted">
+                        {retention ? (
+                          <span
+                            title={t("agent.retainHint")}
+                            className={retention.retained ? "text-muted" : "text-amber"}
+                          >
+                            RETAIN {retention.kept}/{retention.slots}
+                          </span>
+                        ) : r.parts.retainedPct !== null ? (
+                          <span title={t("agent.retainHint")} className="text-muted">
                             RETAIN {r.parts.retainedPct}%
+                          </span>
+                        ) : null}
+                        {rep?.decisionSource && (
+                          <span title={t("agent.engineHint")} className="text-muted">
+                            ENGINE {sourceLabel(rep.decisionSource)}
+                            {remoteSrc && cov ? ` ${cov.remote}/${cov.expected}` : ""}
+                          </span>
+                        )}
+                        {remoteSrc && rep?.fallbackCount !== undefined && (
+                          <span
+                            title={t("agent.fallbackHint")}
+                            className={rep.fallbackCount > 0 ? "text-amber" : "text-muted"}
+                          >
+                            FALLBACK {rep.fallbackCount}
                           </span>
                         )}
                         {r.parts.providers.length > 0 && (
                           <span className="text-muted">
-                            {r.parts.providers.map((x) => x.toUpperCase()).join("+")}
+                            {r.parts.providers.map(sourceLabel).join("+")}
                           </span>
                         )}
                       </div>
@@ -444,9 +538,10 @@ export default function AgentPage() {
                 {isOpen && (
                   <div className="px-4 pb-4">
                     <RunStream
-                      runId={r.id}
                       other={r.other}
-                      onDone={() => load()}
+                      events={stream?.events ?? []}
+                      closed={stream?.closed ?? false}
+                      lost={stream?.lost}
                     />
                   </div>
                 )}
@@ -472,8 +567,8 @@ interface LivePart {
   provider?: string | null;
   latencyMs?: number;
   retries?: number;
+  fallback?: boolean;
   error?: string;
-  ts?: number;
 }
 
 const PHASE_STYLE: Record<LivePart["phase"], string> = {
@@ -484,64 +579,92 @@ const PHASE_STYLE: Record<LivePart["phase"], string> = {
   failed: "border-alert text-alert",
 };
 
-/** 蜂群即時面板：bus SSE 即時事件 + DB 回填（重新載入也有畫面） */
+/** 階段先後：DB 回填比 bus 事件更後面時（漏收事件）以 DB 為準 */
+const PHASE_RANK: Record<LivePart["phase"], number> = {
+  pending: 0,
+  running: 1,
+  retry: 2,
+  done: 3,
+  failed: 3,
+};
+
+/** Part id 形如 q:<runId>:A → 依 kind 與 side 在前端翻譯（伺服器存的 label 固定是繁中） */
+const PART_LABEL_KEYS: Record<string, string> = {
+  qA: "agent.partQA",
+  qB: "agent.partQB",
+  aA: "agent.partAA",
+  aB: "agent.partAB",
+  rA: "agent.partRA",
+  rB: "agent.partRB",
+};
+function partLabel(p: LivePart, t: (k: string) => string): string {
+  const m = /^([qar]):.+:([AB])$/.exec(p.partId);
+  const key = m ? PART_LABEL_KEYS[m[1] + m[2]] : undefined;
+  return key ? t(key) : p.label;
+}
+
+/** 同一次出發最多 5 場（matching.ts MAX_CANDIDATES） */
+const BOARD_RUNS = 5;
+
+/** 蜂群即時面板：共用 user bus 的 part 事件 + DB 回填（重新載入也有畫面） */
 function SwarmBoard({ runs: runRows }: { runs: RunRow[] }) {
-  const [parts, setParts] = useState<Record<string, LivePart>>({});
-  const [runOrder, setRunOrder] = useState<string[]>([]);
+  const { t } = useI18n();
+  const [live, setLive] = useState<Record<string, LivePart>>({});
 
-  // DB 回填：以最近 3 場的 partRows 補齊面板（bus 事件優先，不覆蓋）
-  useEffect(() => {
-    const recent = runRows.slice(0, 3);
-    if (recent.length === 0) return;
-    setParts((prev) => {
-      const next = { ...prev };
-      for (const r of recent) {
-        for (const pr of r.partRows ?? []) {
-          if (next[pr.id]) continue;
-          next[pr.id] = {
-            runId: r.id,
-            candidate: r.other?.name,
-            candidateEmoji: r.other?.emoji,
-            partId: pr.id,
-            kind: pr.kind,
-            label: pr.label,
-            phase:
-              pr.status === "done"
-                ? "done"
-                : pr.status === "failed"
-                  ? "failed"
+  useUserBus(
+    (evt: BusEvent) => {
+      const m = evt as unknown as LivePart;
+      if (typeof m.partId !== "string" || typeof m.runId !== "string") return;
+      setLive((prev) => ({ ...prev, [m.partId]: m }));
+    },
+    { types: ["part"], debounceMs: 0 },
+  );
+
+  // DB 回填（最近幾場）與即時事件合併：同一個 Part 取階段較後者，同階段以即時事件為準
+  const { order, byRun } = useMemo(() => {
+    const merged: Record<string, LivePart> = {};
+    const recent = runRows.slice(0, BOARD_RUNS);
+    for (const r of recent) {
+      for (const pr of r.partRows ?? []) {
+        merged[pr.id] = {
+          runId: r.id,
+          candidate: r.other?.name,
+          candidateEmoji: r.other?.emoji,
+          partId: pr.id,
+          kind: pr.kind,
+          label: pr.label,
+          phase:
+            pr.status === "done"
+              ? "done"
+              : pr.status === "failed"
+                ? "failed"
+                : pr.status === "running"
+                  ? "running"
                   : "pending",
-            provider: pr.provider,
-            latencyMs: pr.latencyMs ?? undefined,
-            retries: pr.retries,
-          };
-        }
+          provider: pr.provider,
+          latencyMs: pr.latencyMs ?? undefined,
+          retries: pr.retries,
+        };
       }
-      return next;
-    });
-    setRunOrder((prev) => {
-      const ids = recent.map((r) => r.id).filter((id) => !prev.includes(id));
-      return ids.length ? [...ids, ...prev] : prev;
-    });
-  }, [runRows]);
+    }
+    for (const p of Object.values(live)) {
+      const db = merged[p.partId];
+      if (!db || PHASE_RANK[p.phase] >= PHASE_RANK[db.phase]) merged[p.partId] = { ...db, ...p };
+    }
+    const byRun = new Map<string, LivePart[]>();
+    for (const p of Object.values(merged)) {
+      const list = byRun.get(p.runId) ?? [];
+      list.push(p);
+      byRun.set(p.runId, list);
+    }
+    // 順序：列表中的 run（新的在前），列表還沒回填的即時 run 排最前
+    const known = recent.map((r) => r.id);
+    const liveOnly = Array.from(byRun.keys()).filter((id) => !runRows.some((r) => r.id === id));
+    const order = [...liveOnly, ...known].filter((id) => byRun.has(id)).slice(0, BOARD_RUNS);
+    return { order, byRun };
+  }, [runRows, live]);
 
-  useEffect(() => {
-    const es = new EventSource("/api/bus/user");
-    es.onmessage = (e) => {
-      try {
-        const m = JSON.parse(e.data) as LivePart;
-        if (m.type !== "part") return;
-        setParts((prev) => ({ ...prev, [m.partId]: { ...m, ts: Date.now() } }));
-        setRunOrder((prev) => (prev.includes(m.runId) ? prev : [...prev, m.runId]));
-      } catch {
-        /* ignore */
-      }
-    };
-    return () => es.close();
-  }, []);
-
-  const runs = runOrder.slice(-3);
-  if (runs.length === 0) return null;
+  if (order.length === 0) return null;
 
   return (
     <div className="card cut mt-3 border-console-soft p-4">
@@ -549,37 +672,37 @@ function SwarmBoard({ runs: runRows }: { runs: RunRow[] }) {
         <span className="mono text-[11px] tracking-[0.16em] text-console-green">
           SWARM {"//"} LIVE PARTS
         </span>
-        <span className="text-[11px] text-muted">
-          每個 Part 隔離執行、獨立重試；開啟「故障演練」看成員失效後如何接力
-        </span>
+        <span className="text-[11px] text-muted">{t("agent.swarmDesc")}</span>
       </div>
       <div className="space-y-2">
-        {runs.map((runId) => {
-          const mine = Object.values(parts)
-            .filter((p) => p.runId === runId)
-            .sort((x, y) => x.partId.localeCompare(y.partId));
+        {order.map((runId) => {
+          const mine = [...(byRun.get(runId) ?? [])].sort((x, y) =>
+            x.partId.localeCompare(y.partId),
+          );
           const done = mine.filter((p) => p.phase === "done").length;
           const retries = mine.reduce((acc, p) => acc + (p.retries ?? 0), 0);
-          const candidate = mine[0]?.candidate ?? "?";
-          const emoji = mine[0]?.candidateEmoji ?? "·";
+          const row = runRows.find((r) => r.id === runId);
+          const candidate = mine.find((p) => p.candidate)?.candidate ?? row?.other.name ?? "?";
+          const emoji =
+            mine.find((p) => p.candidateEmoji)?.candidateEmoji ?? row?.other.emoji ?? "·";
           return (
             <div key={runId} className="flex flex-wrap items-center gap-1.5">
-              <span className="mono w-32 shrink-0 text-[11px] text-ink-soft">
+              <span className="mono w-32 shrink-0 truncate text-[11px] text-ink-soft">
                 {emoji} {candidate}
               </span>
               {mine.map((p) => (
                 <span
                   key={p.partId}
-                  title={`${p.label} · ${p.phase}${p.error ? ` · ${p.error}` : ""}`}
+                  title={`${partLabel(p, t)} · ${p.phase}${p.error ? ` · ${p.error}` : ""}`}
                   className={`mono inline-flex min-w-[104px] flex-col rounded border bg-panel-2/40 px-1.5 py-1 text-[9px] leading-tight ${PHASE_STYLE[p.phase]}`}
                 >
-                  <span className="truncate">{p.label}</span>
+                  <span className="truncate">{partLabel(p, t)}</span>
                   <span className="opacity-75">
                     {p.phase === "running"
-                      ? `attempt ${p.attempt ?? 1}`
+                      ? t("agent.partAttempt", { n: p.attempt ?? 1 })
                       : p.phase === "retry"
-                        ? "重試接力…"
-                        : `${p.provider ?? "—"}${p.latencyMs ? ` ${p.latencyMs}ms` : ""}${p.retries ? ` · R${p.retries}` : ""}`}
+                        ? t("agent.partRetrying")
+                        : `${p.provider ? sourceLabel(p.provider) : "—"}${p.latencyMs ? ` ${p.latencyMs}ms` : ""}${p.retries ? ` · R${p.retries}` : ""}${p.fallback ? " · FB" : ""}`}
                   </span>
                 </span>
               ))}

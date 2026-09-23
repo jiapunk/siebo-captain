@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, useMe } from "@/lib/client";
 import { IconArrowRight, IconPlus } from "@/components/Icons";
-import { useI18n } from "@/lib/i18n";
+import { apiErrorMessage, useI18n } from "@/lib/i18n";
 import LocaleSwitcher from "@/components/LocaleSwitcher";
 
 interface UserRow {
@@ -17,11 +17,16 @@ interface UserRow {
   profileStatus: string;
 }
 
+const EMOJIS = ["🚀", "⚡", "🧩", "🛠️", "🦾", "🎯", "🧠", "🔥"];
+/** 新示範身分的隨機頭像（放在元件外：只在點擊時呼叫） */
+const randomEmoji = () => EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+
 export default function Home() {
   const router = useRouter();
-  const { me, llmMode } = useMe();
+  const { me, llmMode, authMode } = useMe();
   const { t } = useI18n();
-  const [users, setUsers] = useState<UserRow[]>([]);
+  // 示範身分名冊（後端只回沒有 email／密碼的示範身分；DEMO_SWITCH=off 時為空陣列）
+  const [users, setUsers] = useState<UserRow[] | null>(null);
   const [eventName, setEventName] = useState("");
   const [eventCodeDb, setEventCodeDb] = useState("");
   const [name, setName] = useState("");
@@ -33,9 +38,13 @@ export default function Home() {
   } | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [enterError, setEnterError] = useState<string | null>(null);
+  const isSession = authMode === "session";
 
   useEffect(() => {
-    api<{ users: UserRow[] }>("/api/users").then((d) => setUsers(d.users));
+    api<{ users: UserRow[] }>("/api/users")
+      .then((d) => setUsers(d.users))
+      .catch(() => setUsers([]));
     api<{
       event: {
         name: string;
@@ -59,12 +68,31 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  async function enter(id: string, status: string) {
-    await api("/api/session", {
-      method: "POST",
-      body: JSON.stringify({ userId: id }),
-    });
+  /** 回到目前身分：不需要再切換（真帳號也不能經由 /api/session 切換） */
+  function resume(status: string) {
     router.push(status === "ready" ? "/agent" : "/onboarding");
+  }
+
+  /** 切換到示範身分；後端拒絕（真帳號登入中、非示範身分、示範切換關閉）時顯示原因 */
+  async function enter(id: string, status: string) {
+    setEnterError(null);
+    try {
+      await api("/api/session", {
+        method: "POST",
+        body: JSON.stringify({ userId: id }),
+      });
+      router.push(status === "ready" ? "/agent" : "/onboarding");
+    } catch (e) {
+      setEnterError(switchErrorText(e));
+    }
+  }
+
+  function switchErrorText(e: unknown): string {
+    const m = (e as Error).message;
+    if (m === "session_active") return t("b.identity.errSessionActive");
+    if (m === "not_demo_identity") return t("b.identity.errNotDemo");
+    if (m === "demo_switch_disabled") return t("b.identity.errDemoOff");
+    return apiErrorMessage(t, e);
   }
 
   async function createIdentity() {
@@ -72,12 +100,11 @@ export default function Home() {
     setCreateError(null);
     setCreating(true);
     try {
-      const emojis = ["🚀", "⚡", "🧩", "🛠️", "🦾", "🎯", "🧠", "🔥"];
       const { id } = await api<{ id: string }>("/api/users", {
         method: "POST",
         body: JSON.stringify({
           name: name.trim(),
-          emoji: emojis[Math.floor(Math.random() * emojis.length)],
+          emoji: randomEmoji(),
           eventCode: eventCode.trim() || undefined,
         }),
       });
@@ -91,7 +118,11 @@ export default function Home() {
       setCreateError(
         m === "invalid_event_code"
           ? t("landing.errCode", { code: eventCodeDb || "EVOTAVERN" })
-          : t("landing.errCreate"),
+          : m === "session_active" ||
+              m === "not_demo_identity" ||
+              m === "demo_switch_disabled"
+            ? switchErrorText(e)
+            : apiErrorMessage(t, e, "landing.errCreate"),
       );
     } finally {
       setCreating(false);
@@ -107,7 +138,10 @@ export default function Home() {
   return (
     <main className="relative mx-auto max-w-4xl flex-1 px-4 pb-20">
       {/* 直書日文裝飾（桌機） */}
-      <div className="vertical-jp absolute top-40 right-1 hidden text-sm lg:block">
+      <div
+        aria-hidden="true"
+        className="vertical-jp absolute top-40 right-1 hidden text-sm lg:block"
+      >
         攻殻機動隊・電脳空間
       </div>
 
@@ -140,7 +174,11 @@ export default function Home() {
           </span>
         )}
         <span className="mono ml-auto hidden text-[11px] tracking-wider text-muted sm:inline">
-          {llmMode === "real" ? "MODEL // DEEPSEEK" : "MODE // SANDBOX"}
+          {llmMode === "real"
+            ? "MODEL // DEEPSEEK"
+            : llmMode === "hybrid"
+              ? "MODEL // DEEPSEEK × JEV"
+              : "MODE // SANDBOX"}
         </span>
         <span className="ml-auto sm:ml-0">
           <LocaleSwitcher />
@@ -170,7 +208,7 @@ export default function Home() {
         <div className="mt-8 flex flex-wrap items-center gap-3">
           {me && (
             <button
-              onClick={() => enter(me.id, me.profileStatus)}
+              onClick={() => resume(me.profileStatus)}
               className="btn btn-accent"
             >
               {me.profileStatus === "ready"
@@ -205,93 +243,127 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 名冊 */}
-      <section>
-        <div className="mb-4 flex items-baseline justify-between">
-          <div className="tag">
+      {/* 名冊：只有示範身分；真帳號登入中不顯示（要先登出才能切換） */}
+      {isSession ? (
+        <section className="cut p-5">
+          <div className="tag mb-2">
             ROSTER {"// "}
             {t("landing.roster")}
           </div>
-          <span className="mono hidden text-[10px] tracking-wider text-muted sm:inline">
-            {t("landing.rosterHint")}
-          </span>
-        </div>
+          <p className="text-sm text-muted">{t("b.identity.sessionNote")}</p>
+        </section>
+      ) : (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <div className="tag">
+              ROSTER {"// "}
+              {t("landing.roster")}
+            </div>
+            <span className="mono hidden text-[10px] tracking-wider text-muted sm:inline">
+              {t("landing.rosterHint")}
+            </span>
+          </div>
+          <p className="mb-4 text-xs leading-relaxed text-muted">
+            {t("b.landing.demoOnly")}{" "}
+            <Link href="/login" className="text-phos underline underline-offset-2">
+              {t("b.identity.toLogin")}
+            </Link>
+          </p>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {users.map((u) => (
-            <button
-              key={u.id}
-              onClick={() => enter(u.id, u.profileStatus)}
-              className="cut group flex items-center gap-4 p-4 text-left transition hover:border-phos"
+          {enterError && (
+            <div
+              role="alert"
+              className="mb-3 border border-amber bg-amber-soft p-2.5 text-xs text-ink-soft"
             >
-              <span className="reticle flex h-12 w-12 shrink-0 items-center justify-center border border-line bg-base text-2xl">
-                {u.emoji}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className="font-bold">{u.name}</span>
-                  <span className="mono border border-line px-1.5 py-0.5 text-[9px] tracking-wider text-muted">
-                    {u.isBot ? "SIM" : "DEMO"}
+              {enterError}
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(users ?? []).map((u) => (
+              <button
+                key={u.id}
+                onClick={() =>
+                  u.id === me?.id
+                    ? resume(u.profileStatus)
+                    : enter(u.id, u.profileStatus)
+                }
+                className="cut group flex items-center gap-4 p-4 text-left transition hover:border-phos"
+              >
+                <span className="reticle flex h-12 w-12 shrink-0 items-center justify-center border border-line bg-base text-2xl">
+                  {u.emoji}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="font-bold">{u.name}</span>
+                    <span className="mono border border-line px-1.5 py-0.5 text-[9px] tracking-wider text-muted">
+                      {u.isBot ? "SIM" : "DEMO"}
+                    </span>
+                  </span>
+                  <span className="mono mt-1 block line-clamp-2 text-[11px] leading-relaxed text-muted">
+                    {u.tagline}
                   </span>
                 </span>
-                <span className="mono mt-1 block line-clamp-2 text-[11px] leading-relaxed text-muted">
-                  {u.tagline}
-                </span>
-              </span>
-              <IconArrowRight
-                size={16}
-                className="shrink-0 text-muted opacity-0 transition group-hover:text-phos group-hover:opacity-100"
-              />
-            </button>
-          ))}
+                <IconArrowRight
+                  size={16}
+                  className="shrink-0 text-muted opacity-0 transition group-hover:text-phos group-hover:opacity-100"
+                />
+              </button>
+            ))}
 
-          {/* 建立新身分 */}
-          <div className="cut sm:col-span-2">
-            <div className="ticks-x" />
-            <div className="p-5">
-              <div className="tag mb-3">
-                ENLIST {"// "}
-                {t("landing.enlist")}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={t("landing.name")}
-                  maxLength={12}
-                  className="min-w-40 flex-1 border border-line bg-base px-4 py-2.5 text-sm outline-none placeholder:text-muted/70 focus:border-phos"
-                />
-                <input
-                  value={eventCode}
-                  onChange={(e) => setEventCode(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => e.key === "Enter" && createIdentity()}
-                  placeholder={t("landing.eventCode")}
-                  maxLength={16}
-                  className="mono w-36 border border-line bg-base px-4 py-2.5 text-sm tracking-wider outline-none placeholder:text-muted/70 focus:border-phos"
-                />
-                <button
-                  onClick={createIdentity}
-                  disabled={!name.trim() || creating}
-                  className="btn btn-ink"
-                >
-                  <IconPlus size={15} />
-                  {t("landing.start")}
-                </button>
-              </div>
-              {createError && (
-                <div className="mt-3 border border-alert bg-alert-soft p-2.5 text-xs text-ink-soft">
-                  {createError}
+            {/* 建立新身分（示範身分：沒有 email／密碼） */}
+            <div className="cut sm:col-span-2">
+              <div className="ticks-x" />
+              <div className="p-5">
+                <div className="tag mb-3">
+                  ENLIST {"// "}
+                  {t("landing.enlist")}
                 </div>
-              )}
-              <div className="mono mt-3 text-[11px] text-muted">
-                {t("landing.enlistHint", {
-                  code: eventCodeDb || "EVOTAVERN",
-                })}
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t("landing.name")}
+                    aria-label={t("landing.name")}
+                    maxLength={12}
+                    className="min-w-40 flex-1 border border-line bg-base px-4 py-2.5 text-sm outline-none placeholder:text-muted/70 focus:border-phos"
+                  />
+                  <input
+                    value={eventCode}
+                    onChange={(e) => setEventCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === "Enter" && createIdentity()}
+                    placeholder={t("landing.eventCode")}
+                    aria-label={t("landing.eventCode")}
+                    maxLength={16}
+                    className="mono w-36 border border-line bg-base px-4 py-2.5 text-sm tracking-wider outline-none placeholder:text-muted/70 focus:border-phos"
+                  />
+                  <button
+                    onClick={createIdentity}
+                    disabled={!name.trim() || creating}
+                    className="btn btn-ink"
+                  >
+                    <IconPlus size={15} />
+                    {t("landing.start")}
+                  </button>
+                </div>
+                {createError && (
+                  <div
+                    role="alert"
+                    className="mt-3 border border-alert bg-alert-soft p-2.5 text-xs text-ink-soft"
+                  >
+                    {createError}
+                  </div>
+                )}
+                <div className="mono mt-3 text-[11px] text-muted">
+                  {t("landing.enlistHint", {
+                    code: eventCodeDb || "EVOTAVERN",
+                  })}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <p className="mono mt-14 text-center text-[11px] tracking-wider text-muted">
         {llmMode === "real"

@@ -11,22 +11,26 @@ export default function LocaleSwitcher({ compact = false }: { compact?: boolean 
       role="group"
       aria-label={t("lang.title")}
     >
-      {LOCALES.map((l) => (
-        <button
-          key={l.id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setLocale(l.id);
-          }}
-          className={`mono px-2 py-1 text-[10px] tracking-wider transition ${
-            locale === l.id
-              ? "bg-phos text-[#04211a]"
-              : "text-muted hover:text-phos"
-          } ${compact ? "" : "px-2.5"}`}
-        >
-          {l.label}
-        </button>
-      ))}
+      {LOCALES.map((l) => {
+        const active = locale === l.id;
+        return (
+          <button
+            key={l.id}
+            type="button"
+            aria-pressed={active}
+            onClick={(e) => {
+              e.stopPropagation();
+              setLocale(l.id);
+            }}
+            // 觸控目標至少 36px 高（原本約 24px）；目前語系除了顏色，也用 aria-pressed 告知輔助科技
+            className={`mono flex min-h-9 items-center justify-center whitespace-nowrap text-[10px] tracking-wider transition ${
+              active ? "bg-phos text-[#04211a]" : "text-muted hover:text-phos"
+            } ${compact ? "px-1.5 sm:px-2" : "px-2.5"}`}
+          >
+            {l.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

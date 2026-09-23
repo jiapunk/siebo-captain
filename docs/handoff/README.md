@@ -1,5 +1,7 @@
 # 交接文件索引：從 Surrodate 拆成兩個獨立產品
 
+> ⚠️ **歷史文件**：本資料夾是 2026-09-18 從 Surrodate 拆分時的規劃與決策紀錄，不代表目前行為。賽博隊長目前的行為、門檻與限制，以 repo 根目錄的 [README.md](../../README.md) 與 [AUDIT.md](../../AUDIT.md) 為準。
+
 > 決策：**拆開開發**。共用同一套「代理人協商引擎」，但產品定位、TA、信任模型、GTM 完全不同，硬放在同一個 repo 只會互相牽制。
 >
 > 拆分日期：2026-09-18 ｜ 文件版本：v1
@@ -74,7 +76,7 @@ npm i && npx prisma migrate dev --name init && npm run db:seed
 ## 共用決策紀錄（為什麼是現在這樣）
 
 - **為什麼用「代理人協商」而不是表單＋演算法**：真正的篩選發生在軟性訊號（價值觀、協作風格、靠譜度），這些只有「一問一答」問得出來；而且代理人問比本人問不尷尬。
-- **為什麼是雙向閘門（雙方 ≥ 70/60 分）**：避免單方騷擾，也讓「被過濾」有台階下（是雙方的 agent 的判斷，不是人的拒絕）。
+- **為什麼是雙向閘門**：避免單方騷擾，也讓「被過濾」有台階下（是雙方的 agent 的判斷，不是人的拒絕）。門檻各產品不同：約會版見其 repo；賽博隊長是兩邊隊長各自評分、取較低分——≥ 50 上破冰雷達、≥ 60 標優先並進入組隊候選（`src/lib/pairGate.ts`）。
 - **為什麼保留逐字稿與評分**：透明是信任的來源；報告可回放也是產品最好的傳播素材。
 - **為什麼 mock 模式是預設測試路徑**：E2E 零成本、零延遲、確定性；真 LLM 走 OpenCode Go 訂閱。
 
@@ -83,7 +85,7 @@ npm i && npx prisma migrate dev --name init && npm run db:seed
 1. 換真 Auth（目前 cookie 選身分只是 demo 機制）
 2. 檢舉/封鎖與內容安全
 3. 通知系統（web push / email）
-4. 部署（Vercel + 托管 SQLite→Postgres）
+4. 部署（SQLite→Postgres 需重建 migration 與資料轉換、SSE 需跨實例 pub/sub、背景工作需佇列；見根目錄 README 路線圖）
 5. 觀測（LLM 成本、配對成功率、留存）
 
 ---
@@ -97,9 +99,9 @@ npm i && npx prisma migrate dev --name init && npm run db:seed
 > 拆分後兩站各自長出完整能力的紀錄；細節見各 repo README 的 P0–P3 章節。
 
 ### 共同引擎（兩站都有）
-- **P0 蜂群 Part 底座**：原子拆分、每個 part 隔離執行、per-part 重試、覆蓋率/保留率可稽核（`PARTS 6/6 · RETAIN 100%`）
+- **P0 蜂群 Part 底座**：原子拆分、每個 part 隔離執行、per-part 重試、覆蓋率與 RETAIN 可稽核（`PARTS 6/6 · RETAIN x%`；RETAIN 是量測值：報告 Part 的決策 slot 是否原樣進入報告，定義見根目錄 README）
 - **決策層三段鏈**：Jev → LLM → 本地規則，逐題 fallback + 斷路器；每份報告附 `決策 // JEV · 規則 X → Y Δ` 對照
-- **四語系**：繁中 / 简中 / EN / 日本語（UI 與動態內容）
+- **四語系**：繁中 / 簡中 / EN / 日本語（UI 與動態內容）
 
 ### 賽博隊長（siebo-captain）
 - **P1 假設評估式組隊**：`team_eval` 併發隔離評估、硬約束（角色缺口/死局）、不重疊貪婪選隊
@@ -112,5 +114,5 @@ npm i && npx prisma migrate dev --name init && npm run db:seed
 - **P2.6 第二次約會回饋**：`Feedback.round=2`，權重 ×2，記憶曲線第二段
 
 ### Demo 與運維
-- 兩站 10 分鐘評審動線：`~/Documents/DEMO.md`
-- `demo:snapshot` / `demo:restore`：demo 資料 SQLite 一致性快照
+- 兩站評審動線：團隊內部文件（不在 repo 內）；基本動線見根目錄 README「快速開始」
+- `demo:snapshot` / `demo:restore`：demo 資料快照（有 sqlite3 CLI 時用 `VACUUM INTO` 一致性快照，否則退回檔案複製並標示）

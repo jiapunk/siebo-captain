@@ -1,6 +1,8 @@
 # 🧊 賽博隊長 — 交接文件（hackathon vertical｜破冰優先）
 
 > 版本 v1 ｜ 2026-09-18 ｜ 來源：Surrodate repo 拆分 ｜ 建議新專案代號 `siebo-captain`
+>
+> ⚠️ **歷史文件**：這是拆分當時的產品規劃（其中的活動範例、路線圖與「已實作／要做」標記都停在 2026-09-18）。目前行為以根目錄 [README.md](../../README.md) 與 [AUDIT.md](../../AUDIT.md) 為準；demo 活動現為 EvoTavern（code `EVOTAVERN`）。
 
 ## 0. 重新定位（與約會版的關鍵差異）
 

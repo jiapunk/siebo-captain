@@ -6,9 +6,23 @@ import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import ScoreRing from "@/components/ScoreRing";
 import { IconUsers, IconArrowRight } from "@/components/Icons";
-import { api, timeAgo, useMe, useUserBus } from "@/lib/client";
-import { useI18n } from "@/lib/i18n";
+import { api, useMe, useUserBus } from "@/lib/client";
+import { apiErrorMessage, useI18n } from "@/lib/i18n";
 import type { TeamReport } from "@/lib/types";
+import type { Locale } from "@/lib/i18n-dict";
+
+const INTL_LOCALE: Record<Locale, string> = { zh: "zh-Hant", cn: "zh-Hans", en: "en", ja: "ja" };
+
+/** 相對時間（依目前語系；client.tsx 的 timeAgo 只有繁中） */
+function ago(iso: string, locale: Locale): string {
+  const s = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(INTL_LOCALE[locale], { numeric: "auto" });
+  const a = Math.abs(s);
+  if (a < 60) return rtf.format(0, "second");
+  if (a < 3600) return rtf.format(Math.round(s / 60), "minute");
+  if (a < 86400) return rtf.format(Math.round(s / 3600), "hour");
+  return rtf.format(Math.round(s / 86400), "day");
+}
 
 interface Member {
   userId: string;
@@ -18,6 +32,15 @@ interface Member {
   role: string;
   accepted: boolean;
   isMe: boolean;
+}
+
+interface ConnRow {
+  id: string;
+  status: string;
+  /** requested 時：outgoing＝我發出的邀請、incoming＝對方邀請我；connected 為 null */
+  direction: "outgoing" | "incoming" | null;
+  other: { id: string; name: string; emoji: string };
+  lastMessage: { content: string } | null;
 }
 
 interface TeamRow {
@@ -33,9 +56,12 @@ interface TeamRow {
 export default function TeamsPage() {
   const { me, loading } = useMe();
   const router = useRouter();
-  const { t: tr } = useI18n();
+  const { t: tr, locale } = useI18n();
   const [teams, setTeams] = useState<TeamRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // 各隊伍／聯絡的錯誤（存原始錯誤，顯示時才翻譯）
+  const [errors, setErrors] = useState<Record<string, unknown>>({});
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [swarm, setSwarm] = useState<{
     hypotheses: number;
     selected: number;
@@ -53,9 +79,7 @@ export default function TeamsPage() {
       hypotheses: number;
     };
   } | null>(null);
-  const [conns, setConns] = useState<
-    { id: string; status: string; other: { id: string; name: string; emoji: string }; lastMessage: { content: string } | null }[]
-  >([]);
+  const [conns, setConns] = useState<ConnRow[]>([]);
 
   const load = useCallback(() => {
     api<{
@@ -70,19 +94,14 @@ export default function TeamsPage() {
       .then((d) => {
         setTeams(d.teams);
         setSwarm(d.swarm ?? null);
+        setLoadError(null);
       })
-      .catch(() => {});
+      .catch((e) => setLoadError(e));
     api<Parameters<typeof setNetwork>[0]>("/api/network")
       .then((d) => setNetwork(d))
       .catch(() => {});
-    api<{
-      connections: {
-        id: string;
-        status: string;
-        other: { id: string; name: string; emoji: string };
-        lastMessage: { content: string } | null;
-      }[];
-    }>("/api/connections")
+    // email 未驗證時 403：頁首已有驗證橫幅，這裡不重複提示
+    api<{ connections: ConnRow[] }>("/api/connections")
       .then((d) => setConns(d.connections))
       .catch(() => {});
   }, []);
@@ -92,13 +111,43 @@ export default function TeamsPage() {
     if (me) load();
   }, [me, loading, load, router]);
 
-  useUserBus(load);
+  // 只在伺服器狀態真的變了（refresh）時重抓；忽略互盤時每秒數十個 part 事件
+  useUserBus((evt) => {
+    if (evt.type === "refresh" || evt.type === "ready") load();
+  });
 
+  const setError = (key: string, e: unknown) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (e == null) delete next[key];
+      else next[key] = e;
+      return next;
+    });
+
+  /** 加入＝本人同意；所有真人都同意才成立（回 proposed 時代表還在等隊友） */
   async function join(id: string) {
     setBusy(id);
+    setError(id, null);
     try {
-      await api(`/api/teams/${id}`, { method: "POST" });
+      await api<{ status: string; pending: string[] }>(`/api/teams/${id}`, {
+        method: "POST",
+      });
       load();
+    } catch (e) {
+      setError(id, e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function acceptConn(id: string) {
+    setBusy(id);
+    setError(id, null);
+    try {
+      await api(`/api/connections/${id}/accept`, { method: "POST" });
+      load();
+    } catch (e) {
+      setError(id, e);
     } finally {
       setBusy(null);
     }
@@ -152,7 +201,15 @@ export default function TeamsPage() {
         </div>
 
         {!teams && (
-          <div className="cut mt-4 p-8 text-center text-muted">…</div>
+          <div className="cut mt-4 p-8 text-center text-muted">
+            {loadError != null ? (
+              <span role="alert" className="text-sm text-amber">
+                {apiErrorMessage(tr, loadError)}
+              </span>
+            ) : (
+              "…"
+            )}
+          </div>
         )}
 
         {teams && teams.length === 0 && (
@@ -175,7 +232,10 @@ export default function TeamsPage() {
         )}
 
         {/* 候選隊伍 */}
-        {proposals.map((cand, idx) => (
+        {proposals.map((cand, idx) => {
+          const mine = cand.members.find((m) => m.isMe);
+          const waiting = cand.members.filter((m) => !m.accepted);
+          return (
           <div key={cand.id} className="cut rise-in mt-4">
             <div className="flex items-center gap-3 border-b border-line bg-panel-2/60 px-5 py-3">
               <span className="flex h-8 w-8 items-center justify-center border border-line bg-panel-2 text-phos">
@@ -217,6 +277,18 @@ export default function TeamsPage() {
                         {m.role}
                         {m.isBot ? " // SIM" : ""}
                       </span>
+                      {/* 組隊同意狀態：模擬隊友視為已同意；真人要自己按「加入這隊」 */}
+                      <span
+                        className={`mono block text-[10px] tracking-wider ${
+                          m.accepted ? "text-phos" : "text-amber"
+                        }`}
+                      >
+                        {m.isBot
+                          ? tr("b.team.botAccepted")
+                          : m.accepted
+                            ? tr("b.team.accepted")
+                            : tr("b.team.pending")}
+                      </span>
                     </span>
                   </div>
                 ))}
@@ -249,16 +321,30 @@ export default function TeamsPage() {
             </div>
 
             <div className="border-t border-line bg-panel-2/40 p-3">
-              <button
-                onClick={() => join(cand.id)}
-                disabled={busy === cand.id}
-                className="btn btn-accent w-full text-sm"
-              >
-                {busy === cand.id ? tr("teams.joining") : tr("teams.join")}
-              </button>
+              {mine?.accepted ? (
+                <p role="status" className="py-2 text-center text-sm text-ink-soft">
+                  {tr("b.team.waitingFor", {
+                    names: waiting.map((m) => m.name).join(tr("b.listSep")) || "—",
+                  })}
+                </p>
+              ) : (
+                <button
+                  onClick={() => join(cand.id)}
+                  disabled={busy === cand.id}
+                  className="btn btn-accent w-full text-sm"
+                >
+                  {busy === cand.id ? tr("teams.joining") : tr("teams.join")}
+                </button>
+              )}
+              {errors[cand.id] != null && (
+                <p role="alert" className="mt-2 text-center text-xs text-amber">
+                  {apiErrorMessage(tr, errors[cand.id])}
+                </p>
+              )}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {/* 已成立 */}
         {assembled.length > 0 && (
@@ -282,12 +368,12 @@ export default function TeamsPage() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block font-bold">
-                {cand.members.map((m) => m.name).join("、")}
+                {cand.members.map((m) => m.name).join(tr("b.listSep"))}
               </span>
               <span className="mono mt-0.5 block truncate text-[10px] tracking-wider text-muted">
                 {cand.lastMessage
                   ? `${tr("teams.last")}${cand.lastMessage.content.slice(0, 30)}`
-                  : `${tr("teams.enter")} // ${timeAgo(cand.createdAt)}`}
+                  : `${tr("teams.enter")} // ${ago(cand.createdAt, locale)}`}
               </span>
             </span>
             <ScoreRing score={cand.score} size={44} />
@@ -302,7 +388,7 @@ export default function TeamsPage() {
             <div className="p-5">
               <div className="tag flex items-center gap-2">
                 <span className="led led-live" />
-                NETWORK {"//"} 合作網絡
+                NETWORK {"//"} {tr("b.net.title")}
                 <span className="border border-line px-1.5 py-0.5 text-[9px]">
                   SIGNAL: {network.mode.toUpperCase()}
                 </span>
@@ -310,7 +396,12 @@ export default function TeamsPage() {
 
               {/* 圖 */}
               <div className="mt-4 flex justify-center">
-                <svg viewBox="0 0 360 360" className="h-72 w-72">
+                <svg
+                  viewBox="0 0 360 360"
+                  className="h-72 w-72"
+                  role="img"
+                  aria-label={tr("b.net.title")}
+                >
                   {network.edges.map(([a, b], i) => {
                     const pos = (id: string) => {
                       const idx = network.nodes.findIndex((n) => n.id === id);
@@ -384,7 +475,7 @@ export default function TeamsPage() {
                 <div className="border border-line p-2">
                   HUBS
                   <div className="text-sm text-amber">
-                    {network.metrics.hubs.map((h) => h.name).join("、") || "—"}
+                    {network.metrics.hubs.map((h) => h.name).join(tr("b.listSep")) || "—"}
                   </div>
                 </div>
               </div>
@@ -393,31 +484,37 @@ export default function TeamsPage() {
               {network.sim && (
                 <div className="mt-3 border border-line bg-panel-2/50 p-3">
                   <div className="tag mb-2">
-                    SIGNAL SIMULATION {"//"} 同一批 {network.sim.hypotheses} 組假設、兩種選人信號
+                    SIGNAL SIMULATION {"//"}{" "}
+                    {tr("b.net.simDesc", { n: network.sim.hypotheses })}
                   </div>
                   <div className="mono grid grid-cols-2 gap-2 text-center text-[10px] tracking-wider">
                     <div>
-                      社交模式 (SOCIAL)
+                      {tr("b.net.social")} (SOCIAL)
                       <div className="text-sm text-amber">
                         {network.sim.social.clustering}
                       </div>
                       <div className="text-[9px] text-muted">
-                        {network.sim.social.edges} 條邊 · 跨群 {network.sim.social.crossGroup}
+                        {tr("b.net.edgesCross", {
+                          edges: network.sim.social.edges,
+                          cross: network.sim.social.crossGroup,
+                        })}
                       </div>
                     </div>
                     <div>
-                      能力模式 (COMPETENCE)
+                      {tr("b.net.competence")} (COMPETENCE)
                       <div className="text-sm text-phos">
                         {network.sim.competence.clustering}
                       </div>
                       <div className="text-[9px] text-muted">
-                        {network.sim.competence.edges} 條邊 · 跨群 {network.sim.competence.crossGroup}
+                        {tr("b.net.edgesCross", {
+                          edges: network.sim.competence.edges,
+                          cross: network.sim.competence.crossGroup,
+                        })}
                       </div>
                     </div>
                   </div>
                   <p className="mono mt-2 text-[9px] leading-relaxed text-muted">
-                    聚類越低＝越願意跨圈層連結（EvoX 實驗二：0.53 → 0.28）。
-                    切換 ASSEMBLY_SIGNAL 環境變數可改變正式組隊信號。
+                    {tr("b.net.simNote")}
                   </p>
                 </div>
               )}
@@ -431,27 +528,52 @@ export default function TeamsPage() {
             <div className="tag mt-10 mb-1">{tr("conn.title")}</div>
             <p className="mb-3 text-xs text-muted">{tr("conn.desc")}</p>
             {conns.map((cn) => (
-              <Link
-                key={cn.id}
-                href={`/connect/${cn.id}`}
-                className="cut rise-in mb-3 flex items-center gap-4 p-4 transition hover:border-phos"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center border border-line bg-base text-xl">
-                  {cn.other.emoji}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-bold">{cn.other.name}</span>
-                  <span className="mono mt-0.5 block truncate text-[10px] tracking-wider text-muted">
-                    {cn.lastMessage
-                      ? `${tr("teams.last")}${cn.lastMessage.content.slice(0, 30)}`
-                      : tr("conn.direct")}
-                  </span>
-                </span>
-                <span className="mono shrink-0 text-[10px] tracking-wider text-phos">
-                  {cn.status === "connected" ? tr("conn.open") : tr("conn.locked")}
-                </span>
-                <IconArrowRight size={16} className="text-muted" />
-              </Link>
+              <div key={cn.id} className="mb-3">
+                <div className="flex items-stretch gap-2">
+                  <Link
+                    href={`/connect/${cn.id}`}
+                    className="cut rise-in flex min-w-0 flex-1 items-center gap-4 p-4 transition hover:border-phos"
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center border border-line bg-base text-xl">
+                      {cn.other.emoji}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-bold">{cn.other.name}</span>
+                      <span className="mono mt-0.5 block truncate text-[10px] tracking-wider text-muted">
+                        {cn.lastMessage
+                          ? `${tr("teams.last")}${cn.lastMessage.content.slice(0, 30)}`
+                          : tr("conn.direct")}
+                      </span>
+                    </span>
+                    <span
+                      className={`mono shrink-0 text-[10px] tracking-wider ${
+                        cn.status === "connected" ? "text-phos" : "text-amber"
+                      }`}
+                    >
+                      {cn.status === "connected"
+                        ? tr("conn.open")
+                        : cn.direction === "incoming"
+                          ? tr("b.conn.incomingShort")
+                          : tr("b.conn.outgoingShort")}
+                    </span>
+                    <IconArrowRight size={16} className="text-muted" />
+                  </Link>
+                  {cn.status !== "connected" && cn.direction === "incoming" && (
+                    <button
+                      onClick={() => acceptConn(cn.id)}
+                      disabled={busy === cn.id}
+                      className="btn btn-accent shrink-0 px-4 text-sm disabled:opacity-50"
+                    >
+                      {busy === cn.id ? "…" : tr("b.conn.accept")}
+                    </button>
+                  )}
+                </div>
+                {errors[cn.id] != null && (
+                  <p role="alert" className="mt-1 text-xs text-amber">
+                    {apiErrorMessage(tr, errors[cn.id])}
+                  </p>
+                )}
+              </div>
             ))}
           </>
         )}

@@ -1,8 +1,8 @@
-import { execSync } from "node:child_process";
 import { test, expect } from "@playwright/test";
+import { resetDemo } from "./helpers";
 
 test.beforeAll(() => {
-  execSync("npx tsx prisma/reset-demo.ts", { cwd: process.cwd() });
+  resetDemo();
 });
 
 test("持續聯絡：破冰卡保持聯絡 → 隊伍頁清單 → 一對一私訊", async ({ page }) => {

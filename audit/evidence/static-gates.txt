@@ -1,4 +1,6 @@
 # 静态质量闸门（生成时间：2026-09-22 19:34 PDT，commit：be773f2）
+# 〔修正版注〕本文件是修正前（commit be773f2）的旧证据，验证阶段会以修正版重新生成；解读方式见 AUDIT.md §4。
+# 〔修正版注〕build 输出在 (3/13) 截断、没有路由表；tsc 是在已有 Next 生成类型的目录里跑的（fresh clone 请用 npm run typecheck）；密钥扫描只比对一把 key，范围不足，原本写出的 key 前缀已移除。
 
 ## tsc --noEmit
 exit=0（无输出）
@@ -38,5 +40,5 @@ EVOMAP_NODE_SECRET=<64 chars, masked>
 EVOMAP_ENABLED=1
 
 ## 机密扫描（追踪文件中的真实密钥）
-apikey_2236 命中: 0
+<JEV key 前缀（已移除）> 命中: 0
 tracked .env 文件数: 0

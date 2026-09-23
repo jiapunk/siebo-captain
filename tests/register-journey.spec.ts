@@ -1,8 +1,8 @@
-import { execSync } from "node:child_process";
-import { test, expect } from "@playwright/test";
+import { test, expect, request as pwRequest } from "@playwright/test";
+import { resetDemo } from "./helpers";
 
 test.beforeAll(() => {
-  execSync("npx tsx prisma/reset-demo.ts", { cwd: process.cwd() });
+  resetDemo();
 });
 
 test.setTimeout(240_000);
@@ -11,7 +11,7 @@ const EMAIL = "journey@example.com";
 const PW = "journey-pass-123";
 const PW2 = "journey-pass-456";
 
-test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼重設", async ({ page }) => {
+test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼重設", async ({ page, baseURL }) => {
   // ---------- 1. 註冊 ----------
   await page.goto("/login");
   const eventCode: string = await page.request
@@ -48,8 +48,13 @@ test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼�
   const me2 = await page.request.get("/api/me").then((r) => r.json());
   expect(me2.user?.emailVerified).toBe(true);
 
-  // ---------- 4. 六題訪談 → 編譯 ----------
+  // ---------- 4. 隱私告知同意 → 六題訪談 → 編譯 ----------
   await page.goto("/onboarding");
+  // 新訪談要先勾選同意才開始（未勾選時按鈕不可按）
+  const start = page.getByRole("button", { name: /開始訪談/ });
+  await expect(start).toBeDisabled();
+  await page.getByRole("checkbox", { name: /同意/ }).check();
+  await start.click();
   const answers = [
     "我寫 TypeScript 跟 React",
     "想拿獎，也學新東西",
@@ -62,8 +67,16 @@ test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼�
     const input = page.getByPlaceholder("像跟朋友聊天一樣回答…");
     if (i === 0) await expect(input).toBeVisible({ timeout: 10_000 });
     await input.fill(answers[i]);
+    // 等這一輪隊長回覆真的回來（而不是固定 sleep），下一輪才送
+    const replied = page.waitForResponse(
+      (r) => r.url().endsWith("/api/onboarding/message") && r.request().method() === "POST",
+    );
     await page.getByRole("button", { name: "送出" }).click();
-    await page.waitForTimeout(250);
+    const res = await replied;
+    expect(res.status(), `第 ${i + 1} 題：${await res.text()}`).toBe(200);
+    const { reply, done } = (await res.json()) as { reply: string; done: boolean };
+    await expect(page.getByText(reply, { exact: true }).last()).toBeVisible();
+    expect(done).toBe(i === answers.length - 1);
   }
   const compileBtn = page.getByRole("button", { name: /完成訪談，編譯我的檔案/ });
   await expect(compileBtn).toBeVisible({ timeout: 15_000 });
@@ -90,7 +103,30 @@ test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼�
   await page.goto("/agent");
   await page.getByRole("button", { name: /產生隊伍提案/ }).click();
   await page.waitForURL("**/teams");
+  const joined = page.waitForResponse(
+    (r) => /^\/api\/teams\/[^/]+$/.test(new URL(r.url()).pathname) && r.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "加入這隊" }).first().click();
+  const jr = await joined;
+  expect(jr.status(), await jr.text()).toBe(200);
+  const teamId = new URL(jr.url()).pathname.split("/").pop()!;
+  const { status, pending } = (await jr.json()) as { status: string; pending: string[] };
+  if (status === "proposed") {
+    // 隊裡還有其他真人（例如示範身分 Demo阿飛）：要每位真人都同意才成立
+    expect(pending.length).toBeGreaterThan(0);
+    await expect(page.getByText(/等待.*同意/).first()).toBeVisible({ timeout: 10_000 });
+    for (const uid of pending) {
+      const mate = await pwRequest.newContext({ baseURL });
+      const sw = await mate.post("/api/session", { data: { userId: uid } });
+      expect(sw.status(), `切換到隊友 ${uid}：${await sw.text()}`).toBe(200);
+      const ok = await mate.post(`/api/teams/${teamId}`);
+      expect(ok.status(), await ok.text()).toBe(200);
+      await mate.dispose();
+    }
+    await page.reload();
+  } else {
+    expect(status).toBe("assembled");
+  }
   await expect(page.getByText("已成立的隊伍")).toBeVisible({ timeout: 15_000 });
   await page.locator('a[href^="/team/"]').first().click();
   await page.waitForURL("**/team/**");

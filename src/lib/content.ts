@@ -17,7 +17,8 @@ export interface ContentData {
   comms: { text: string; meet: string };
   interests: [string, string][]; // [regex, label]
   jobs: [string, string][];
-  roles: [string, string][]; // hack: [regex, canonical role]
+  // [regex, canonical role]。zh.roles 是「跨語系總表」：roleKey（llm/mock.ts）與 roleKeyOf 都用它比對任意語系的角色字串
+  roles: [string, string][];
   roleLabels: Record<string, string>; // canonical -> display
   options: {
     availability: { full: string; part: string; flex: string };
@@ -141,14 +142,16 @@ const zh: ContentData = {
     ["產品經理|产品经理|PM", "產品經理"],
     ["學生|学生|上課|上课|研究所", "學生"],
   ],
+  // 跨語系總表（繁中／簡中／英文／日文都要對得上；順序＝優先序）。
+  // 短英文字（pm/api/ml/ai）加字邊界，避免 npm、rapid、html、email 之類誤判。
   roles: [
-    ["全端|full.?stack|前後端都|前后端都", "fullstack"],
-    ["前端|frontend|react|vue|ui 實作|ui 实作", "frontend"],
-    ["後端|后端|backend|api|伺服器|server", "backend"],
-    ["設計|设计|design|figma|ui\\/ux", "design"],
-    ["pm|產品經理|产品经理|企劃|企划|簡報|简报|pitch", "pm"],
-    ["資料|资料|data|機器學習|机器学习|ml|pytorch|分析", "data"],
-    ["ai|llm|agent|提示詞|提示词|prompt", "ai"],
+    ["全端|全栈|full.?stack|前後端都|前后端都|フルスタック", "fullstack"],
+    ["前端|front.?end|react|vue|ui 實作|ui 实作|フロント", "frontend"],
+    ["後端|后端|back.?end|\\bapis?\\b|伺服器|服务器|server|バック|サーバ", "backend"],
+    ["設計|设计|design|figma|ui\\/ux|ui.?ux|デザイン|デザイナ", "design"],
+    ["\\bpm\\b|產品經理|产品经理|product manager|企劃|企划|企画|簡報|简报|pitch|プロダクト", "pm"],
+    ["資料|资料|数据|數據|data|機器學習|机器学习|機械学習|\\bml\\b|pytorch|analyst|分析|データ", "data"],
+    ["\\bai\\b|llm|agent|提示詞|提示词|プロンプト|prompt", "ai"],
   ],
   roleLabels: {
     fullstack: "全端", frontend: "前端", backend: "後端",
@@ -620,7 +623,7 @@ const ja: ContentData = {
     fulltime: ["ずっと", "全日", "48", "full", "all", "全程"],
     parttime: ["夜", "週末", "仕事の後", "part", "evening"],
     architect: ["設計", "図", "plan", "architect", "架構"],
-    iterative: ["試作", "反復", "agile", "iterate", "辺作", "邊做"],
+    iterative: ["試作", "反復", "作りながら", "agile", "iterate", "辺作", "邊做"],
   },
 };
 
@@ -1073,33 +1076,110 @@ const cn: ContentData = {
 
 export const CONTENT: Record<Locale, ContentData> = { zh, cn, en, ja };
 
+type CanonKind = "goal" | "availability" | "style";
+
+/** 各 kind 的 canonical 值（依優先序；最後一個是都對不上時的預設） */
+const CANON_ORDER: Record<CanonKind, (keyof ContentData["canon"] | "build" | "flex")[]> = {
+  goal: ["win", "learn", "network", "build"],
+  availability: ["fulltime", "parttime", "flex"],
+  style: ["architect", "iterative", "flex"],
+};
+
+const LOCALES_ALL: Locale[] = ["zh", "cn", "en", "ja"];
+const norm = (v: string) => v.trim().toLowerCase();
+
+/** 四語系選項原文 → canonical（前端選項、mock 編譯出來的值都能精確對上） */
+const OPTION_INDEX: Record<CanonKind, Map<string, string>> = (() => {
+  const idx: Record<CanonKind, Map<string, string>> = {
+    goal: new Map(),
+    availability: new Map(),
+    style: new Map(),
+  };
+  for (const l of LOCALES_ALL) {
+    const o = CONTENT[l].options;
+    idx.availability.set(norm(o.availability.full), "fulltime");
+    idx.availability.set(norm(o.availability.part), "parttime");
+    idx.availability.set(norm(o.availability.flex), "flex");
+    for (const k of ["win", "learn", "network", "build"] as const)
+      idx.goal.set(norm(o.goal[k]), k);
+    for (const k of ["architect", "iterative", "flex"] as const)
+      idx.style.set(norm(o.style[k]), k);
+  }
+  return idx;
+})();
+
+/** 四語系 canon 關鍵字的聯集（自由文字用） */
+const CANON_ALL: ContentData["canon"] = (() => {
+  const out = {} as ContentData["canon"];
+  for (const key of Object.keys(zh.canon) as (keyof ContentData["canon"])[])
+    out[key] = [...new Set(LOCALES_ALL.flatMap((l) => CONTENT[l].canon[key]))];
+  return out;
+})();
+
+/** 依關鍵字比對；回 null 表示這組關鍵字完全對不上（讓呼叫端換下一組） */
+function matchCanon(kind: CanonKind, value: string, c: ContentData["canon"]): string | null {
+  const v = value.toLowerCase();
+  const has = (keys: string[]) => keys.some((k) => v.includes(k.toLowerCase()));
+  const order = CANON_ORDER[kind];
+  for (const key of order) {
+    const keys = (c as Record<string, string[] | undefined>)[key];
+    if (keys && has(keys)) return key;
+  }
+  return null;
+}
+
+/**
+ * 任意語系的 goal / availability / style 字串 → canonical 值。
+ * 1) 四語系選項原文精確對應；2) 指定語系的關鍵字（維持原本同語系的判斷）；
+ * 3) 四語系關鍵字聯集（跨語系檔案混用）；4) 預設 build / flex。
+ */
 export function canonical(
-  kind: "goal" | "availability" | "style",
+  kind: CanonKind,
   value: string,
   fallbackLocale: Locale = "zh",
 ): string {
-  const c = CONTENT[fallbackLocale].canon;
-  const has = (keys: string[]) =>
-    keys.some((k) => value.toLowerCase().includes(k.toLowerCase()));
-  if (kind === "goal") {
-    if (has(c.win)) return "win";
-    if (has(c.learn)) return "learn";
-    if (has(c.network)) return "network";
-    return "build";
-  }
-  if (kind === "availability") return has(c.fulltime) ? "fulltime" : has(c.parttime) ? "parttime" : "flex";
-  return has(c.architect) ? "architect" : has(c.iterative) ? "iterative" : "flex";
+  const raw = String(value ?? "");
+  const exact = OPTION_INDEX[kind].get(norm(raw));
+  if (exact) return exact;
+  const own = matchCanon(kind, raw, (CONTENT[fallbackLocale] ?? CONTENT.zh).canon);
+  if (own) return own;
+  const any = matchCanon(kind, raw, CANON_ALL);
+  if (any) return any;
+  const order = CANON_ORDER[kind];
+  return order[order.length - 1];
 }
 
+/** 四語系角色顯示名（小寫）→ canonical；canonical 鍵本身也收 */
+const ROLE_LABEL_INDEX: Map<string, string> = (() => {
+  const idx = new Map<string, string>();
+  for (const key of Object.keys(zh.roleLabels)) idx.set(key, key);
+  for (const l of LOCALES_ALL)
+    for (const [key, label] of Object.entries(CONTENT[l].roleLabels))
+      idx.set(norm(label), key);
+  return idx;
+})();
 
-/** 角色字串（任意語系）→ 當前語系的顯示名稱 */
-export function roleDisplay(locale: Locale, role: string): string {
+/**
+ * 任意語系的角色字串 → canonical 角色鍵（fullstack/frontend/…）；認不得就原樣回傳。
+ * 先比對四語系的顯示名（「フロント」「数据」「Full-stack」…），再用 zh.roles 跨語系總表的正則。
+ */
+export function roleKeyOf(role: string): string {
+  const raw = String(role ?? "").trim();
+  if (!raw) return raw;
+  const exact = ROLE_LABEL_INDEX.get(norm(raw));
+  if (exact) return exact;
   const hit = CONTENT.zh.roles.find(([re]) => {
     try {
-      return new RegExp(re, "i").test(role);
+      return new RegExp(re, "i").test(raw);
     } catch {
       return false;
     }
   })?.[1];
-  return CONTENT[locale].roleLabels[hit ?? role] ?? role;
+  return hit ?? raw;
+}
+
+/** 角色字串（任意語系）→ 當前語系的顯示名稱 */
+export function roleDisplay(locale: Locale, role: string): string {
+  const key = roleKeyOf(role);
+  return (CONTENT[locale] ?? CONTENT.zh).roleLabels[key] ?? role;
 }

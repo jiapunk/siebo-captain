@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import ScoreRing from "@/components/ScoreRing";
-import { IconRadar } from "@/components/Icons";
-import { api, useMe, useUserBus } from "@/lib/client";
+import { api, apiErrorText, useMe, useUserBus } from "@/lib/client";
 import { useI18n } from "@/lib/i18n";
 import { shareCardPng } from "@/lib/card";
 import type { IcebreakerCard } from "@/lib/types";
@@ -16,7 +15,13 @@ interface Person {
   runId: string;
   name: string;
   emoji: string;
+  /** 我的隊長給對方的分數 */
   score: number;
+  /** 對方隊長給我的分數 */
+  theirScore?: number;
+  /** 雙方較低分（分級依據） */
+  pairScore?: number;
+  /** pairGate：priority＝雙方 ≥60、watch＝雙方 ≥50（兩者都能生成破冰卡） */
   band?: "priority" | "watch";
   role: string;
   skills: string[];
@@ -25,6 +30,13 @@ interface Person {
   summaryForUser: string;
   sharedTopics: string[];
   card: IcebreakerCard | null;
+}
+
+interface Conn {
+  id: string;
+  status: string;
+  /** requested 時：outgoing＝我發出的邀請、incoming＝對方邀請我；connected 為 null */
+  direction: "outgoing" | "incoming" | null;
 }
 
 export default function PeoplePage() {
@@ -36,8 +48,16 @@ export default function PeoplePage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
-  const [conns, setConns] = useState<Record<string, { id: string; status: string }>>({});
+  const [conns, setConns] = useState<Record<string, Conn>>({});
   const [connecting, setConnecting] = useState<string | null>(null);
+  // 每位對象各自的錯誤訊息（破冰卡、聯絡、匯出）
+  const [errs, setErrs] = useState<Record<string, string>>({});
+
+  const setErr = (userId: string, text: string | null) =>
+    setErrs((prev) => {
+      const { [userId]: _drop, ...rest } = prev;
+      return text ? { ...rest, [userId]: text } : rest;
+    });
 
   const load = useCallback(() => {
     api<{ people: Person[] }>("/api/people")
@@ -47,40 +67,72 @@ export default function PeoplePage() {
         for (const p of d.people) if (p.card) initial[p.userId] = p.card;
         setCards(initial);
       })
-      .catch(() => {});
+      .catch(() => setPeople((prev) => prev ?? []));
   }, []);
 
-  useEffect(() => {
-    if (!loading && !me) router.replace("/");
-    if (me) load();
-  }, [me, loading, load, router]);
-
   const loadConns = useCallback(() => {
-    api<{ connections: { id: string; status: string; other: { id: string } }[] }>(
-      "/api/connections",
-    )
+    api<{
+      connections: (Conn & { other: { id: string } })[];
+    }>("/api/connections")
       .then((d) => {
-        const m: Record<string, { id: string; status: string }> = {};
-        for (const c of d.connections) m[c.other.id] = { id: c.id, status: c.status };
+        const m: Record<string, Conn> = {};
+        for (const c of d.connections)
+          m[c.other.id] = { id: c.id, status: c.status, direction: c.direction ?? null };
         setConns(m);
       })
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (me) loadConns();
-  }, [me, loadConns]);
+    if (!loading && !me) router.replace("/");
+  }, [me, loading, router]);
 
-  useUserBus(load);
+  useEffect(() => {
+    if (!me) return;
+    load();
+    loadConns();
+  }, [me, load, loadConns]);
+
+  // 互盤結束、對方接受邀請都會發 refresh（防抖後重抓）
+  useUserBus(() => {
+    load();
+    loadConns();
+  });
 
   async function keepInTouch(userId: string) {
     setConnecting(userId);
+    setErr(userId, null);
     try {
-      const res = await api<{ id: string; status: string }>("/api/connections", {
+      const res = await api<Conn>("/api/connections", {
         method: "POST",
         body: JSON.stringify({ userId }),
       });
-      setConns((prev) => ({ ...prev, [userId]: res }));
+      setConns((prev) => ({
+        ...prev,
+        [userId]: { id: res.id, status: res.status, direction: res.direction ?? null },
+      }));
+    } catch (e) {
+      setErr(userId, apiErrorText(e, t, "radar.connErr"));
+    } finally {
+      setConnecting(null);
+    }
+  }
+
+  async function accept(userId: string, connId: string) {
+    setConnecting(userId);
+    setErr(userId, null);
+    try {
+      await api<{ id: string; status: string }>(
+        `/api/connections/${encodeURIComponent(connId)}/accept`,
+        { method: "POST" },
+      );
+      setConns((prev) => ({
+        ...prev,
+        [userId]: { id: connId, status: "connected", direction: null },
+      }));
+    } catch (e) {
+      setErr(userId, apiErrorText(e, t, "radar.connErr"));
+      loadConns();
     } finally {
       setConnecting(null);
     }
@@ -88,14 +140,15 @@ export default function PeoplePage() {
 
   async function generate(userId: string) {
     setBusy(userId);
+    setErr(userId, null);
     try {
       const { card } = await api<{ card: IcebreakerCard }>(
-        `/api/people/${userId}/icebreakers`,
+        `/api/people/${encodeURIComponent(userId)}/icebreakers`,
         { method: "POST" },
       );
       setCards((prev) => ({ ...prev, [userId]: card }));
-    } catch {
-      // 忽略：可能未互盤完成
+    } catch (e) {
+      setErr(userId, apiErrorText(e, t, "radar.genErr"));
     } finally {
       setBusy(null);
     }
@@ -105,6 +158,7 @@ export default function PeoplePage() {
     const card = cards[p.userId];
     if (!card || exporting) return;
     setExporting(p.userId);
+    setErr(p.userId, null);
     try {
       await shareCardPng(
         {
@@ -127,6 +181,8 @@ export default function PeoplePage() {
         },
         `siebo-card-${p.name}.png`,
       );
+    } catch {
+      setErr(p.userId, t("radar.exportErr"));
     } finally {
       setExporting(null);
     }
@@ -145,7 +201,7 @@ export default function PeoplePage() {
       <>
         <AppHeader />
         <main className="flex flex-1 items-center justify-center p-8 text-muted">
-          {loading ? "載入中…" : "請先選擇身分"}
+          {loading ? t("common.loading") : t("common.pickIdentity")}
         </main>
       </>
     );
@@ -161,7 +217,7 @@ export default function PeoplePage() {
             <div>
               <div className="tag flex items-center gap-2">
                 <span className="led led-live" />
-                RADAR {"// "}{t("radar.tag").split("// ")[1]}
+                {t("radar.tag")}
               </div>
               <h1 className="font-display mt-1.5 text-xl font-black">
                 {t("radar.title")}
@@ -177,7 +233,7 @@ export default function PeoplePage() {
         </div>
 
         {!people && (
-          <div className="card cut p-8 text-center text-muted">載入中…</div>
+          <div className="card cut p-8 text-center text-muted">{t("common.loading")}</div>
         )}
 
         {people && people.length === 0 && (
@@ -200,7 +256,7 @@ export default function PeoplePage() {
         )}
 
         {people && people.length > 0 && (
-          <div className="tag mb-3">CONTACTS {"// "}{people.length} 個訊號</div>
+          <div className="tag mb-3">{t("radar.contacts", { n: people.length })}</div>
         )}
 
         {people?.map((p, idx) => {
@@ -224,10 +280,27 @@ export default function PeoplePage() {
                     <span className="mono border border-line-strong px-1.5 py-0.5 text-[10px] tracking-wider">
                       {p.role}
                     </span>
-                    <span className="mono border border-accent px-1.5 py-0.5 text-[10px] tracking-wider text-accent-deep">
-                      {t("radar.worth")}
-                    </span>
+                    {p.band === "watch" ? (
+                      <span
+                        title={t("radar.bandWatchHint")}
+                        className="mono border border-line-strong px-1.5 py-0.5 text-[10px] tracking-wider text-muted"
+                      >
+                        {t("radar.bandWatch")}
+                      </span>
+                    ) : (
+                      <span
+                        title={t("radar.bandPriorityHint")}
+                        className="mono border border-accent px-1.5 py-0.5 text-[10px] tracking-wider text-accent-deep"
+                      >
+                        {t("radar.bandPriority")}
+                      </span>
+                    )}
                   </div>
+                  {typeof p.theirScore === "number" && (
+                    <div className="mono mt-1 text-[10px] tracking-wider text-muted">
+                      {t("radar.pairScores", { mine: p.score, theirs: p.theirScore })}
+                    </div>
+                  )}
                   <div className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-ink-soft">
                     {p.summaryForUser}
                   </div>
@@ -240,7 +313,7 @@ export default function PeoplePage() {
                   </div>
                 </div>
                 <div className="hidden shrink-0 sm:block">
-                  <ScoreRing score={p.score} size={58} label="互補" />
+                  <ScoreRing score={p.score} size={58} label={t("radar.compat")} />
                 </div>
               </div>
 
@@ -248,7 +321,7 @@ export default function PeoplePage() {
               {card ? (
                 <div className="border-t-[1.5px] border-line-strong bg-panel-2/60 p-5">
                   <div className="mb-3 flex items-center justify-between">
-                    <span className="tag">BRIEFING {"// "}{t("radar.briefing").split("// ")[1]}</span>
+                    <span className="tag">{t("radar.briefing")}</span>
                     <span className="stamp text-phos">{t("radar.ready")}</span>
                   </div>
 
@@ -309,47 +382,81 @@ export default function PeoplePage() {
                     ))}
                   </div>
 
-                  {/* 保持聯絡 */}
-                  <div className="mt-4 flex items-center gap-2 border-t border-line pt-4">
-                    {conns[p.userId] ? (
-                      <>
-                        <span className="mono text-[11px] tracking-wider text-phos">
-                          {t("conn.kept")}
-                        </span>
-                        {conns[p.userId].status === "connected" && (
-                          <Link
-                            href={`/connect/${conns[p.userId].id}`}
-                            className="btn btn-outline ml-auto px-4 py-2 text-xs"
+                  {/* 保持聯絡：bot 立即 connected；真人之間 requested → 對方接受後 connected */}
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+                    {(() => {
+                      const c = conns[p.userId];
+                      if (c?.status === "connected")
+                        return (
+                          <>
+                            <span className="mono text-[11px] tracking-wider text-phos">
+                              {t("conn.kept")}
+                            </span>
+                            <Link
+                              href={`/connect/${c.id}`}
+                              className="btn btn-outline ml-auto px-4 py-2 text-xs"
+                            >
+                              {t("conn.open")}
+                            </Link>
+                          </>
+                        );
+                      if (c?.status === "requested" && c.direction === "incoming")
+                        return (
+                          <>
+                            <span className="line-clamp-1 text-xs text-ink-soft">
+                              {t("radar.connIncoming", { name: p.name })}
+                            </span>
+                            <button
+                              onClick={() => accept(p.userId, c.id)}
+                              disabled={connecting === p.userId}
+                              className="btn btn-accent ml-auto shrink-0 px-4 py-2 text-xs disabled:opacity-50"
+                            >
+                              {connecting === p.userId ? "…" : t("radar.connAccept")}
+                            </button>
+                          </>
+                        );
+                      if (c?.status === "requested")
+                        return (
+                          <span className="mono text-[11px] tracking-wider text-amber">
+                            {t("radar.connPending")}
+                          </span>
+                        );
+                      return (
+                        <>
+                          <span className="line-clamp-1 text-xs text-muted">
+                            {t("conn.desc")}
+                          </span>
+                          <button
+                            onClick={() => keepInTouch(p.userId)}
+                            disabled={connecting === p.userId}
+                            className="btn btn-ink ml-auto shrink-0 px-4 py-2 text-xs disabled:opacity-50"
                           >
-                            {t("conn.open")}
-                          </Link>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <span className="line-clamp-1 text-xs text-muted">
-                          {t("conn.desc")}
-                        </span>
-                        <button
-                          onClick={() => keepInTouch(p.userId)}
-                          disabled={connecting === p.userId}
-                          className="btn btn-ink ml-auto shrink-0 px-4 py-2 text-xs disabled:opacity-50"
-                        >
-                          {connecting === p.userId ? "…" : t("conn.keep")}
-                        </button>
-                      </>
-                    )}
+                            {connecting === p.userId ? "…" : t("conn.keep")}
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
+                  {errs[p.userId] && (
+                    <div role="alert" className="mt-2 text-xs text-alert">
+                      {errs[p.userId]}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="flex gap-2 border-t-[1.5px] border-line-strong bg-panel-2/60 p-3">
+                <div className="border-t-[1.5px] border-line-strong bg-panel-2/60 p-3">
                   <button
                     onClick={() => generate(p.userId)}
                     disabled={busy === p.userId}
-                    className="btn btn-accent flex-1 py-2.5 text-sm disabled:opacity-60"
+                    className="btn btn-accent w-full py-2.5 text-sm disabled:opacity-60"
                   >
                     {busy === p.userId ? t("radar.generating") : t("radar.generate")}
                   </button>
+                  {errs[p.userId] && (
+                    <div role="alert" className="mt-2 text-center text-xs text-alert">
+                      {errs[p.userId]}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

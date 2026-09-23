@@ -1,4 +1,6 @@
 > tsx scripts/evomap-status.ts
+# 〔修正版注〕本文件是修正前（commit be773f2）的旧证据，验证阶段会以修正版重新生成；解读方式见 AUDIT.md §4。
+# 〔修正版注〕心跳日志来自旧版 launchd 设定（log 在 /tmp）；claimed / level / credits 需节点凭证才能查询，第三方请用 AUDIT.md §5 的公开端点。
 
 ── NODE ─────────────────────────────
   node_id            node_74fc6e393a8171eb

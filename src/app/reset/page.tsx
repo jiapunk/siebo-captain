@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import { api } from "@/lib/client";
-import { useI18n } from "@/lib/i18n";
+import { apiErrorMessage, useI18n } from "@/lib/i18n";
 
 export default function ResetPage() {
   const { t } = useI18n();
@@ -23,7 +23,7 @@ export default function ResetPage() {
       return;
     }
     if (password !== confirm) {
-      setError(t("auth.pwRule"));
+      setError(t("b.auth.pwMismatch"));
       return;
     }
     setBusy(true);
@@ -35,7 +35,13 @@ export default function ResetPage() {
       setDone(true);
     } catch (e) {
       const m = (e as Error).message;
-      setError(m === "weak_password" ? t("auth.pwRule") : t("auth.verifyFail"));
+      setError(
+        m === "weak_password"
+          ? t("auth.pwRule")
+          : m === "invalid_token"
+            ? t("auth.verifyFail")
+            : apiErrorMessage(t, e, "auth.verifyFail"),
+      );
     } finally {
       setBusy(false);
     }
@@ -68,6 +74,7 @@ export default function ResetPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={t("login.phPwUp")}
+                    autoComplete="new-password"
                     className="w-full border border-line bg-base px-3.5 py-2.5 outline-none focus:border-phos"
                   />
                 </label>
@@ -79,12 +86,16 @@ export default function ResetPage() {
                     onChange={(e) => setConfirm(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && submit()}
                     placeholder={t("login.phPwUp")}
+                    autoComplete="new-password"
                     className="w-full border border-line bg-base px-3.5 py-2.5 outline-none focus:border-phos"
                   />
                 </label>
               </div>
               {error && (
-                <div className="mt-4 border border-amber bg-amber-soft p-3 text-sm text-ink-soft">
+                <div
+                  role="alert"
+                  className="mt-4 border border-amber bg-amber-soft p-3 text-sm text-ink-soft"
+                >
                   {error}
                 </div>
               )}

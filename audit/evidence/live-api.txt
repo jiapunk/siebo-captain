@@ -1,4 +1,6 @@
 # Live API 证据（:3000 赛博队长，生成时间：2026-09-22 19:36 PDT）
+# 〔修正版注〕本文件是修正前（commit be773f2）的旧证据，验证阶段会以修正版重新生成；解读方式见 AUDIT.md §4。
+# 〔修正版注〕clustering 0.87 是旧算法（排除孤立节点）；旧版 RETAIN 恒为 100%（非量测）；本档没有 /api/compare 原文。
 
 ## GET /api/agent/runs（节选）
 completed runs: 5

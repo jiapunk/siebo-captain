@@ -1,4 +1,6 @@
 # 端到端测试证据（生成时间：2026-09-22 19:37 PDT，commit：be773f2）
+# 〔修正版注〕本文件是修正前（commit be773f2）的旧证据，验证阶段会以修正版重新生成；解读方式见 AUDIT.md §4。
+# 〔修正版注〕本档为节选：第 1、2 项（auth.spec、compare.spec）的结果行不在档内；当时只有 13 个 E2E spec，没有 tests/api 与单元测试。
 
 命令：npx playwright test
 说明：测试会重置 demo 数据库（Playwright 固定 LLM_PROVIDER=mock / JEV_API_KEY=""，确保可复现）

@@ -407,9 +407,22 @@ body {
   background: rgba(91, 227, 167, 0.3);
 }
 
-/* ---------- 行動裝置：為底部 Dock 留白 ---------- */
+/* ---------- 行動裝置：為底部 Dock 留白 ----------
+   Dock 單列：56px 項目高 + 1px 邊框 + safe-bottom（至少 0.5rem 或裝置安全區），再多留 1.5rem 呼吸空間 */
 @media (max-width: 767px) {
   main {
-    padding-bottom: 7rem !important;
+    padding-bottom: calc(3.5rem + 1px + max(0.5rem, env(safe-area-inset-bottom)) + 1.5rem) !important;
+  }
+}
+
+/* ---------- 減少動態效果（系統設定「減少動態」時關掉無限動畫與平滑捲動） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

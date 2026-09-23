@@ -6,18 +6,20 @@
 同一套「代理人协商引擎」的两个垂直产品：
 **赛博队长**（黑客松组队）— 本仓库；**赛博月老**（约会，第二垂直）— <https://github.com/jiapunk/surrodate>
 
+> 逐项查核请看 [AUDIT.md](./AUDIT.md)。标「〔待验证阶段更新〕」的数值会由修正版 server 实测后填入。
+
 ---
 
 ## 1. 做了什么
 
-每个参赛者配一位专属 AI 队长：祂先跟其他参赛者的队长**互相盘点**（技能互补？目标一致？48 小时会不会开天窗？），
-通过交叉盘点的人出现在你的**破冰雷达**上（附可直接照念的破冰卡），通过组合直接变成**队伍提案**。
+每个参赛者配一位专属 AI 队长：祂先跟同场其他参赛者的队长**互相盘点**（技能互补？目标一致？48 小时会不会开天窗？），
+两边队长**各自评分**：双方都给到 50 分以上的人出现在你的**破冰雷达**上（附可直接照念的破冰卡）；双方都给到 60 分以上的人才进入**队伍提案**的候选。
 
 - 选手访谈（6 题编译档案 + 分享权限）→ 队长互盘（逐字稿 live 转播）
-- 破冰雷达（50 分入列 / 60 分优先）+ 破冰卡与分享图（1080px PNG）
-- **队伍提案**：互盘分 + 角色覆盖率组出候选队伍，加入即成立
-- 团队群聊（SSE）、持续联络 1:1 私讯
-- 可选：GitHub 技能验证（公开 API 交叉比对语言主张）
+- 破冰雷达（双方 ≥50 入列 / 双方 ≥60 优先）+ 破冰卡与分享图（1080px PNG）
+- **队伍提案**：候选的三人组合各自隔离评估，硬约束过滤后选出最多 3 队；**所有真人成员都同意才成立**
+- 团队群聊（SSE）；持续联络 1:1 私信（真人之间需对方接受邀请）
+- 可选：GitHub 公开资料比对（比对技能与公开 repo 语言；只比对公开资料，不证明账号所有权）
 
 ## 2. 为什么做
 
@@ -29,51 +31,68 @@
 **引擎：原子拆分 → 隔离执行 → 程序汇合 → 可稽核决策层**
 
 ```
-候选对 → 6 个 Part（提问/作答/假設評估/組隊評估/報告/破冰）
-       每個 Part 隔離執行、獨立重試、記錄 provider 與延遲
-       匯合層（程式）只讀 slot：硬約束過濾 → 排序 → 不重疊貪婪選隊
-       評分決策層：Jev → LLM → 本地規則（逐題 fallback + 斷路器）
+候选对 → 6 个 Part：双方各自「提问 q / 作答 a / 评估报告 r」（q:A a:B q:B a:A r:A r:B）
+       每个 Part 隔离执行、独立重试，记录 provider、延迟、调用数与退路
+组队   → 每个三人假设 1 个 team_eval Part（≤15 个，并发 3）
+汇合层（程序）只读 slot：硬约束过滤 → 排序 → 不重叠贪婪选队
+评分决策层：Jev → LLM → 本地规则（逐题 fallback + 断路器）
 ```
 
 | SECTION 9 要求 | 我们的对应实现 |
 |---|---|
-| 角色分工 | Part 注册表（questions/answers/team_eval/…），每个 Part 独立职责与重试 |
-| 通信协议 | 双方队长**结构化互访问答**（JSON 决策协议），全程逐字稿可稽核 |
-| 冲突解决 | 硬约束（角色缺口 / 死局概率）+ 双方独立评分取交集 |
-| 故障恢复 | per-Part retry + 决策层降级（Jev 挂→LLM→规则），流程永不中断；**「故障演练」开关**现场演示「成员失效 → 自动重试接力」（`SWARM // LIVE PARTS` 面板即时可见，支持 DB 回填） |
-| 质量/速度/成本取舍 | **`/compare` 单双对照页**：同一对话纪录实跑「单体 1 次呼叫」vs「蜂群 6-Part」——现场数据 81(JEV) vs 76、46s vs 23s、10/10 栏位完整度、调用 6 vs 1；另有 `规则分 vs Jev 分` 每场 Δ 可量化 |
-| 「另一位 Agent 复核」 | 双方代理**独立评审**，双 ≥70 才配对；組隊採隔離假設評估 |
-| 「去 EvoMap 找别人试过的办法」 | 已注册节点并 `fetch` 学习 promoted 基因（花 4.13 credits） |
-| 「经验留下来」 | 发布 Gene+Capsule+EvolutionEvent（sha256 内容定址）；指挥台显示 `EVOMAP // LINKED` |
+| 角色分工 | Part 注册表：每场互盘 6 个 Part（双方各自提问、作答、写评估报告），稳定 ID、固定 slot、各自重试；组队时每个三人假设 1 个 `team_eval` Part |
+| 通信协议 | 双方队长以自然语言问答互访（LLM 以 JSON 封装 questions / answers），全程逐字稿可稽核；评分走型别化决策题（Noul / Choice / Score：报告 8 题、组队 7 题），文字由模板合成 |
+| 冲突解决 | **双方门槛**：两边队长各自评分，取较低分——≥50 上破冰雷达、≥60 标优先并进入组队候选；组队硬约束（队伍评估 ≥60、角色缺口 / 死锁旗标 <0.6）+ 不重叠贪婪；队伍需所有真人成员同意才成立 |
+| 故障恢复 | Part 级重试 1 次；LLM Part 重试后仍失败 → 改用本机脚本产生，本场后续 Part 降级走本机脚本，run 仍完成（断网时每场最坏约 3 分钟才降级）；评分层 Jev → LLM → 规则（逐题 fallback、连续 3 次失败的断路器 + 半开探测）；**「故障演练」开关**现场演示「成员失效 → 自动重试接力」（`SWARM // LIVE PARTS` 面板即时可见） |
+| 质量/速度/成本取舍 | **`/compare` 单体 vs 蜂群**：在同一份逐字稿上，比较蜂群的评分 Part（`r:A`）与单体的一次调用。公平可比的是「评分步骤」的耗时与调用数；蜂群全流程墙钟含对谈生成，分栏另列。hybrid 下两边评分 provider 不同（蜂群 Jev、单体 LLM），页面如实标示；每场只有一次单体取样，不作统计结论 |
+| 「另一位 Agent 复核」 | 对方队长独立写一份评估（reportB），与我方队长的评估（reportA）取较低分做门槛：任一方低于 60，就不进组队候选 |
+| 「去 EvoMap 找别人试过的办法」 | 注册节点并 `fetch` 一个 promoted Capsule（`sha256:299eb589…`）：参考其 bundle 打包格式（自包含 validation、code_snippet 证据栏位）；组队引擎为自研、未使用该基因 |
+| 「经验留下来」 | 发布 Gene + Capsule + EvolutionEvent（sha256 内容定址）；发布前先过 Hub validate，没过或 0 队就不发布；指挥台显示 `EVOMAP // LINKED` |
 
 **EvoMap GEP-A2A 落地实况**（opt-in、fail-open）
 ```
-节点 node_74fc6e393a8171eb（claimed · Level 2 · reputation 50 · 心跳每 5 分钟）
-v1 bundle_9b91f1df7185954e（GDI 32.9）
-v2 bundle_59acb3cc7a144c00（GDI 35.0；含 code_snippet + execution_trace + 自包含 validation）
-学习来源：promoted Capsule sha256:299eb589…（GDI 41.3）→ 已吸收进 v2
+节点 node_74fc6e393a8171eb（alias siebo-captain；心跳每 5 分钟；claimed / Level / credits 需节点凭证才能查询）
+v1 bundle_9b91f1df7185954e —— 仅本地记录，无法公开验证
+v2 bundle_59acb3cc7a144c00 —— 公开可查：GET https://evomap.ai/a2a/assets/<sha256>（asset id 见 assets/gep/last-publish.json）
+   含 code_snippet + 自包含 validation；execution_trace 在已发布版本中为静态值，现已改为由 DB 记录计算（待重新发布）
+学习来源：promoted Capsule sha256:299eb589…（GDI 41.3）→ 参考其 bundle 打包格式（自包含 validation、code_snippet 证据栏位），组队引擎为自研、未使用该基因
 ```
+
+**数据流与隐私**：默认 mock 模式不外送任何数据。接真 LLM / Jev（hybrid）时，访谈原文与档案编译会送到 LLM 供应商；互盘与组队评估只送分享权限投影后的档案与逐字稿；GitHub 只收到用户名；EvoMap 只收到不含用户 id / 姓名的汇总统计。完整表格见 README 的隐私与数据流一节，以及 AUDIT §6。
 
 ## 4. 现场可复现的数据
 
-- 互盘 5 场：`DECISION // JEV ×5 · JEV vs RULE Δ avg +11.6`、每场 `PARTS 6/6 · RETAIN 100%`
-- **单体 vs 蜂群（同一场对话纪录）**：蜂群 81 分（JEV、6/6 Parts、46.0s）vs 单次 LLM 76 分（1 call、22.9s）→ 一致性分数差 5、五维平均差 9.2
-- 合作网络：9 节点 / 6 边 / 聚类系数 0.87（社交 vs 能力双信号模拟）
-- Agent Ledger：行为记帐 → 能力分（示例 53）
-- 测试：队长 15/15 · 月老 7/7（Playwright）；`tsc` 0 error；build ✅
+> 以下数值〔待验证阶段更新〕：由修正版 server 实测后填入。Jev / LLM 相关数字需 hybrid 模式与付费 key 才能重现；fresh clone 的 mock 模式只会得到规则层的确定性数字。
+
+- 互盘：`DECISION // JEV ×〔待验证阶段更新〕`；决策层与规则层的分歧 Δ 平均〔待验证阶段更新〕（Δ 是与手写规则的分歧，不是决策层的「贡献」）
+- 蜂群覆盖：每场 `PARTS 〔待验证阶段更新〕 · RETAIN 〔待验证阶段更新〕`（RETAIN = 报告 Part 的 8 个决策 slot 中原封不动进入报告的数量；夹限、规则覆写、逐题退回都算不保留）
+- **单体 vs 蜂群（同一份逐字稿）**：评分步骤耗时 蜂群 `r:A` 〔待验证阶段更新〕 vs 单体 〔待验证阶段更新〕；分数 〔待验证阶段更新〕 vs 〔待验证阶段更新〕；样本 n = 〔待验证阶段更新〕 场
+- 合作网络：〔待验证阶段更新〕 节点 / 〔待验证阶段更新〕 边 / 聚类系数 〔待验证阶段更新〕（标准平均聚类：degree <2 的节点记 0 并计入平均；旧版 0.87 是排除孤立节点的算法，已作废）；社交 vs 能力双信号模拟〔待验证阶段更新〕
+- Agent Ledger：行为记帐 → 能力分（示例〔待验证阶段更新〕）
+- 测试：单元 〔待验证阶段更新〕 passed · E2E 〔待验证阶段更新〕 passed（Playwright，独立测试 DB）；`npm run typecheck` / `lint` / `build` 〔待验证阶段更新〕
 - 四语系：繁中 / 简中 / EN / 日本語
+- 赛博月老的数据见其仓库（本次修正未涵盖）
 
 ## 5. 运行方式
 
 ```bash
+git clone https://github.com/jiapunk/siebo-captain && cd siebo-captain
 npm install
-npm run setup          # 迁移 + 种子
-npm run dev            # http://localhost:3000（Demo 身份：Demo阿飛）
-npm run test:e2e       # 14 项端到端测试
+npm run setup                    # 没有 .env 时自动从 .env.example 建立（mock 模式、密钥空白）→ 迁移 → 种子
+npm run typecheck                # next typegen && tsc --noEmit
+npm run lint
+npm run build
+npm run test:unit                # 单元测试（node:test）
+npx playwright install chromium  # 第一次跑 E2E 需要
+npm run test:e2e                 # E2E（独立测试 DB，不会动到 demo 数据）
+npm run dev                      # http://localhost:3000（示范身份：Demo阿飛）
 ```
 
-环境变量见 `.env.example`（LLM / Jev 决策层 / 活动资讯 / EvoMap opt-in）。
+- 现场演示建议用 `npm run demo:serve`（`next build && next start -H 0.0.0.0`，端口读 shell 的 `PORT`，默认 3000）
+- `npm run demo:snapshot` / `npm run demo:restore`：演示前存快照、演示后还原；全新 clone 没有快照，`demo:restore` 只会印出提示，回到初始 demo 数据用 `npm run db:seed`
+- 用旧版建立的 demo 数据库升级：先 `npm run db:rebaseline`（只改写迁移记录），再 `npm run db:migrate`
+- 环境变量见 `.env.example`（LLM / Jev 决策层 / 活动信息 / 账号 / EvoMap opt-in），默认值全部安全（mock、EvoMap 关闭）
 
 ## 6. 成员
 
-- （待填：队员姓名 · 分工）
+- **⚠️ 提交前必填：队员姓名 · 分工**

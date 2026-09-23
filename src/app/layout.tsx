@@ -1,18 +1,28 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
+import { translate } from "@/lib/i18n-dict";
+import { htmlLangOf, resolveServerLocale } from "@/lib/locale";
 
-export const metadata: Metadata = {
-  title: "賽博隊長 · 黑客松破冰組隊 | SIEBO CAPTAIN",
-  description:
-    "黑客松最難的不是寫 Code，是開場十分鐘沒人講話。你的專屬隊長先替你去破冰：技能互補、目標一致、投入時間對得上，才推薦成隊伍。 / Your AI Captain breaks the ice before you write a single line.",
-};
+// 語系由伺服器依 sc_lang cookie（沒有時依 Accept-Language）決定：
+// SSR 直接輸出正確的 <html lang> 與文字，不會先閃一下繁中；也讓每頁都是動態渲染。
+export async function generateMetadata(): Promise<Metadata> {
+  const { locale } = await resolveServerLocale();
+  return {
+    title: translate(locale, "b.meta.title"),
+    description: translate(locale, "b.meta.desc"),
+  };
+}
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// 不用 Next 產生的全域 LayoutProps：乾淨 clone 在 next typegen/build 之前直接跑 tsc 也能通過
+export default async function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  const { locale } = await resolveServerLocale();
   return (
-    <html lang="zh-Hant" className="h-full antialiased">
+    <html lang={htmlLangOf(locale)} className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <LocaleProvider>{children}</LocaleProvider>
+        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
       </body>
     </html>
   );

@@ -1,8 +1,8 @@
-import { execSync } from "node:child_process";
 import { test, expect } from "@playwright/test";
+import { resetDemo, shotPath } from "./helpers";
 
 test.beforeAll(() => {
-  execSync("npx tsx prisma/reset-demo.ts", { cwd: process.cwd() });
+  resetDemo();
 });
 
 test("動態內容多語系：EN 模式下隊長對談與報告為英文", async ({ page }) => {
@@ -33,5 +33,5 @@ test("動態內容多語系：EN 模式下隊長對談與報告為英文", async
   await expect(page.getByText(/Goal: |availability:/).first()).toBeVisible({
     timeout: 10_000,
   });
-  await page.screenshot({ path: "shots/27-en-dynamic.png", fullPage: true });
+  await page.screenshot({ path: shotPath("27-en-dynamic.png"), fullPage: true });
 });
