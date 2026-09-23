@@ -147,7 +147,7 @@
 
 | | 赛博队长 | 赛博月老 |
 |---|---|---|
-| 当前 commit | `be773f2`（详见 `git log`） | `0aaab99`（详见 `git log`） |
+| 证据生成时 commit | `be773f2`（本文件随后的提交见 `git log`） | `0aaab99`（同上） |
 | 数据库迁移 | 10 个（SQLite / Prisma） | 8 个 |
 | 运行时 | Node 22 · Next.js 16.3 · TypeScript 5 | 同左 |
 | 主要依赖 | prisma, next, react, opencc-js, playwright | 同左（无 opencc） |
