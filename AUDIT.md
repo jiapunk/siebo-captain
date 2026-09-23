@@ -3,7 +3,7 @@
 > EvoTavern 进化酒馆黑客松 · 深圳站 ｜ 赛道 **04 多 Agent 蜂群协作 | SECTION 9**
 > 本文件让第三方（评委 / 审计）**逐项独立复核赛博队长（本仓库）的主张**。每条主张都附「如何复现」与「预期输出」，机读证据在 `audit/evidence/`。
 > 赛博月老（surrodate）是另一个仓库，本文件只列索引；它的数据不在本次修正范围内，未重新复核。
-> **修正版说明**：本版依 2026-09-23 的全面审查修正了代码与文件，只写代码真正做得到的事。数值与测试数已由修正版（commit `85ab163`）实测填入；`audit/evidence/` 的静态闸门、测试、Live API 与全新 clone 证据都已用修正版重新生成（2026-09-23 10:08 PDT），`evomap.txt` 与 `demo-assets-qa.txt` 仍是修正前的记录（见 §4）。
+> **修正版说明**：本版依 2026-09-23 的全面审查修正了代码与文件，只写代码真正做得到的事。数值与测试数已由修正版（commit `072b471`）实测填入；`audit/evidence/` 的静态闸门、测试、Live API 与全新 clone 证据都已用修正版重新生成（2026-09-23 10:56 PDT），`evomap.txt` 与 `demo-assets-qa.txt` 仍是修正前的记录（见 §4）。
 
 ---
 
@@ -14,8 +14,8 @@
 | 1 | 打开 <https://github.com/jiapunk/siebo-captain> | 公开可访问、代码完整 |
 | 2 | `git clone` → `npm install` → `npm run setup` | 没有 `.env` 时自动从 `.env.example` 建立（mock 模式、密钥空白）→ `prisma migrate deploy` → 种子成功（SQLite） |
 | 3 | `npm run typecheck && npm run lint && npm run build` | 0 error（`typecheck` = `next typegen && tsc --noEmit`；lint 0 error / 0 warning；build 无 whole-project tracing 警告） |
-| 4 | `npm run test:unit` | 51 passed（10 个文件，node:test） |
-| 5 | `npx playwright install chromium && npm run test:e2e` | 48 passed（19 个 spec 文件，约 3.5 分钟）；使用独立测试 DB（`prisma/test-3100.db`），全程 mock、不外连，不会动到 demo 数据；跑完工作区保持干净 |
+| 4 | `npm run test:unit` | 60 passed（12 个文件，node:test） |
+| 5 | `npx playwright install chromium && npm run test:e2e` | 50 passed（19 个 spec 文件，约 3.5 分钟）；使用独立测试 DB（`prisma/test-3100.db`），全程 mock、不外连，不会动到 demo 数据；跑完工作区保持干净 |
 | 6 | `npm run dev` → <http://localhost:3000> | 以示范身份 Demo阿飛 进入 |
 | 7 | 读 `audit/evidence/*` | 静态 / 测试 / Live / 全新 clone / EvoMap / 物料证据原文（见 §4 的说明） |
 
@@ -30,7 +30,7 @@
 | 场景 | 黑客松组队破冰 | 约会配对 |
 | 一句话 | 你的队长先替你去破冰，双方都认可才组队 | 你的月老先替你去相亲，过关才见面 |
 | 仓库 | [jiapunk/siebo-captain](https://github.com/jiapunk/siebo-captain) | [jiapunk/surrodate](https://github.com/jiapunk/surrodate) |
-| 测试 | E2E 48 + 单元 51 | 见其仓库（本次未复核） |
+| 测试 | E2E 50 + 单元 60 | 见其仓库（本次未复核） |
 | 语言 | 繁中 / 简中 / EN / 日本語 | 繁中（UI） |
 
 **赛博队长的引擎要素**
@@ -46,7 +46,7 @@
 
 ### 2.1 赛博队长
 
-> 本表对应修正版（commit `85ab163`）的 spec 与单元测试：E2E 48 项、单元 51 项全数通过（`audit/evidence/test-run.txt`）。
+> 本表对应修正版（commit `072b471`）的 spec 与单元测试：E2E 50 项、单元 60 项全数通过（`audit/evidence/test-run.txt`）。
 > E2E 在 `tests/*.spec.ts` 与 `tests/api/*.spec.ts`（Playwright），单元测试在 `tests/unit/*.test.ts`（node:test）。
 
 | 功能 | 测试文件 | 断言要点 |
@@ -79,7 +79,7 @@
 
 ## 3. 实测数据（含复现方式）
 
-> 以下数值是修正版 server（commit `85ab163`，mock 设定）读取 demo 数据库副本的实测结果（2026-09-23 09:56–09:58 PDT，原文见 `audit/evidence/live-api.txt`）。互盘、队伍与 `/compare` 的来源记录是 2026-09-22 在 hybrid 模式（真 Jev + 真 LLM）下由修正前代码写入的记录；修正版负责读取与重新计算（聚类、双信号模拟、Δ、compare 分栏都是修正版算法）。
+> 以下数值是修正版 server（commit `072b471`，mock 设定）读取 demo 数据库副本的实测结果（2026-09-23 10:50 PDT，原文见 `audit/evidence/live-api.txt`）。互盘、队伍与 `/compare` 的来源记录是 2026-09-22 在 hybrid 模式（真 Jev + 真 LLM）下由修正前代码写入的记录；修正版负责读取与重新计算（聚类、双信号模拟、假设的最新一轮切分、Δ、compare 分栏都是修正版算法）。
 > **可重现性**：Jev / LLM 相关数字需要 `LLM_PROVIDER=hybrid` 与付费的 `JEV_API_KEY`、`LLM_API_KEY`；fresh clone 默认是 mock 模式，只会得到规则层的确定性数字（`decisionSource=mock`）。LLM 输出有随机性，即使有 key 也不会得到完全相同的数字。
 
 | 指标 | 数值 | 复现方式 | 定义 |
@@ -96,7 +96,7 @@
 
 ## 4. 证据文件索引（机读原文）
 
-> `static-gates.txt`、`test-run.txt`、`live-api.txt`、`fresh-clone.txt` 已用修正版（commit `85ab163`，2026-09-23 10:08 PDT）重新生成，都是完整原始输出（未节选）；路径已去识别（`<repo>`、`<scratchpad>`）。
+> `static-gates.txt`、`test-run.txt`、`live-api.txt`、`fresh-clone.txt` 已用修正版（commit `072b471`，2026-09-23 10:56 PDT）重新生成，都是完整原始输出（未节选）；路径已去识别（`<repo>`、`<scratchpad>`）。
 > 仍是修正前的记录：`evomap.txt`（commit `be773f2`；心跳日志来自旧版 launchd 设定，log 在 `/tmp`）与 `demo-assets-qa.txt`（物料在仓库外）。
 > 旧版证据的已知缺口（节选的测试输出、截断的 build、只扫一把 key 的密钥扫描、旧算法的聚类 0.87）已由新文件取代。
 
@@ -136,7 +136,7 @@
 | 项 | 实际行为 | 证据 |
 |---|---|---|
 | `.env` 未入库 | `git ls-files` 只有 `.env.example`；`.env.example` 全是安全默认值（mock、EvoMap 关闭、密钥空白） | `git ls-files \| grep '\.env'` |
-| 密钥扫描 | `npm run secret-scan`：`.env` 与 `.env.live` 的全部机密值（LLM / Jev / EvoMap，共 3 把）对工作树 212 个文件与全部 git 历史（19 个 commit、786 个物件，含二进位 blob）比对：命中 0；追踪的 `.env*` 只有 `.env.example`；只印变量名与命中数，不印值 | `static-gates.txt` |
+| 密钥扫描 | `npm run secret-scan`：`.env` 与 `.env.live` 的全部机密值（LLM / Jev / EvoMap，共 3 把）对工作树 214 个文件与全部 git 历史（闸门执行时 20 个 commit、797 个物件，含二进位 blob）比对：命中 0；追踪的 `.env*` 只有 `.env.example`；只印变量名与命中数，不印值 | `static-gates.txt` |
 | 示范身份切换 | 只能切到**没有 email、没有密码**的示范身份；`sd_uid` 必须对应示范身份才生效；登录真账号时真 session 永远优先；`DEMO_SWITCH=off` 可整个关闭 | `api/auth-security.spec.ts` |
 | 认证闸门 | 受保护 API 未登录回 401；需要身份的页面由前端导回首页 | `auth.spec.ts`、`api/auth-security.spec.ts`、`api/api-guards.spec.ts` |
 | 未验证闸门 | 有 email 但未验证：不能发起配对、组队（产生 / 加入）、联络（发起 / 接受 / 私信）、群聊、破冰卡、`/compare` 重跑（403 `email_unverified`） | `register-journey.spec.ts`、`api/api-guards.spec.ts` |
@@ -185,7 +185,7 @@
 
 | | 赛博队长 |
 |---|---|
-| 证据生成时 commit | 修正版 `85ab163`（分支 `review-fixes`；之后的提交只更新文件与证据）；`evomap.txt`、`demo-assets-qa.txt` 仍为 `be773f2` |
+| 证据生成时 commit | 修正版 `072b471`（分支 `review-fixes`；之后的提交只更新文件与证据）；`evomap.txt`、`demo-assets-qa.txt` 仍为 `be773f2` |
 | 数据库迁移 | 1 个 baseline（`20260923000000_baseline`，SQLite / Prisma；旧版 10 个迁移已合并） |
 | 运行时 | Node ≥ 20.9（`package.json` engines）· Next.js 16.3.5 · React 19 · Prisma 6 · TypeScript 5 |
 | 主要依赖 | next、react、@prisma/client、openai；开发：prisma、@playwright/test、tsx、dotenv、eslint |
@@ -203,9 +203,9 @@ npm run setup                    # 没有 .env 时自动从 .env.example 建立 
 npm run typecheck                # next typegen && tsc --noEmit；预期 0 error
 npm run lint                     # 预期 0 errors、0 warnings
 npm run build                    # 预期 build 成功
-npm run test:unit                # 预期 51 passed
+npm run test:unit                # 预期 60 passed
 npx playwright install chromium  # 第一次跑 E2E 需要
-npm run test:e2e                 # 预期 48 passed；独立测试 DB，不会动到 prisma/dev.db
+npm run test:e2e                 # 预期 50 passed；独立测试 DB，不会动到 prisma/dev.db
 npm run dev                      # → http://localhost:3000（示范身份：Demo阿飛）
 ```
 

@@ -6,7 +6,7 @@
 同一套「代理人协商引擎」的两个垂直产品：
 **赛博队长**（黑客松组队）— 本仓库；**赛博月老**（约会，第二垂直）— <https://github.com/jiapunk/surrodate>
 
-> 逐项查核请看 [AUDIT.md](./AUDIT.md)。下方数值由修正版 server（commit `85ab163`）实测，原文在 `audit/evidence/`。
+> 逐项查核请看 [AUDIT.md](./AUDIT.md)。下方数值由修正版 server（commit `072b471`）实测，原文在 `audit/evidence/`。
 
 ---
 
@@ -62,14 +62,14 @@ v2 bundle_59acb3cc7a144c00 —— 公开可查：GET https://evomap.ai/a2a/asset
 
 ## 4. 现场可复现的数据
 
-> 以下数值由修正版 server 读取 demo 数据库副本实测（2026-09-23 09:56–09:58 PDT，commit `85ab163`，`audit/evidence/live-api.txt`）；互盘与 `/compare` 的来源记录是 2026-09-22 在 hybrid 模式（真 Jev + 真 LLM）下产生的。Jev / LLM 相关数字需 hybrid 模式与付费 key 才能重现；fresh clone 的 mock 模式只会得到规则层的确定性数字。
+> 以下数值由修正版 server 读取 demo 数据库副本实测（2026-09-23 10:50 PDT，commit `072b471`，`audit/evidence/live-api.txt`）；互盘与 `/compare` 的来源记录是 2026-09-22 在 hybrid 模式（真 Jev + 真 LLM）下产生的。Jev / LLM 相关数字需 hybrid 模式与付费 key 才能重现；fresh clone 的 mock 模式只会得到规则层的确定性数字。
 
 - 互盘：`DECISION // JEV ×5`（5 场全部 completed）；决策层与规则层的分歧 Δ 平均 **+11.6**（+6～+14，n = 5；Δ 是与手写规则的分歧，不是决策层的「贡献」）
 - 蜂群覆盖：每场 `PARTS 6/6`（0 重试、0 退路）；修正版新跑的场次 `RETAIN 8/8`（mock 模式规则层直通，恒为全数保留；demo 数据里旧版写入的场次没有 RETAIN 量测）（RETAIN = 报告 Part 的 8 个决策 slot 中原封不动进入报告的数量；夹限、规则覆写、逐题退回都算不保留）
 - **单体 vs 蜂群（同一份逐字稿）**：评分步骤耗时 蜂群 `r:A` 1,492 ms（Jev，1 次调用）vs 单体 22,904 ms（LLM，1 次调用）；分数 81 vs 76；样本 n = 1 场（两边 provider 不同，不作统计结论；蜂群全流程 46,036 ms 含对谈生成，不与单体比）。demo 那份单体 baseline 建于修正前：Jev 只看 6 个档案字段＋逐字稿前 6000 字，单体 LLM 看完整公开档案，两边的评分者与输入都不同；修正版重跑时单体只收到同样的 6 个字段与长度（输入对齐），评分者仍不同。81 vs 76 的分差不能解读为蜂群的质量优势
 - 合作网络：9 节点 / 6 边 / 聚类系数 0.48（标准平均聚类：degree <2 的节点记 0 并计入平均；旧版 0.87 是排除孤立节点的算法，已作废）；社交 vs 能力双信号模拟：只用当前用户最新一轮（与最新一笔相差 10 分钟内）的 team_eval 假设：Demo阿飛 最新一轮只有 3 个假设，两种信号都只选出 老吳+小綠（6 边、聚类 0.48），这份数据上看不出差异；旧证据的 10 个假设是混了多轮的结果
 - Agent Ledger：行为记帐 → 能力分（示例：Demo阿飛 加入 2 队（67、74 分）→ 能力分 62；只加入 1 队 → 53；无记录 = 基准 35）
-- 测试：单元 51 passed（10 个文件）· E2E 48 passed（19 个 spec 文件，Playwright，独立测试 DB）；`npm run typecheck` / `lint`（0 error、0 warning）/ `build` 全部通过；全新 clone 不建 `.env` 依文件跑完整流程同样全绿（`audit/evidence/fresh-clone.txt`）
+- 测试：单元 60 passed（12 个文件）· E2E 50 passed（19 个 spec 文件，Playwright，独立测试 DB）；`npm run typecheck` / `lint`（0 error、0 warning）/ `build` 全部通过；全新 clone 不建 `.env` 依文件跑完整流程同样全绿（`audit/evidence/fresh-clone.txt`）
 - 四语系：繁中 / 简中 / EN / 日本語
 - 赛博月老的数据见其仓库（本次修正未涵盖）
 

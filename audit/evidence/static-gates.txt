@@ -1,11 +1,13 @@
-# 静态质量闸门（生成时间：2026-09-23 10:08 PDT，commit：85ab163，分支 review-fixes）
+# 静态质量闸门（生成时间：2026-09-23 10:56 PDT，commit：072b471，分支 review-fixes）
 # 路径已去识别：<repo> = 仓库根目录，<scratchpad> = 本机临时目录
 # 环境：Node v22.22.2 · npm 10.9.7 · macOS；命令在修正版工作目录执行，下面是完整原始输出（未截断）
-# 说明：build 用 NEXT_DIST_DIR=.next-gate（避免与其他 dev server 的 .next 锁冲突），并强制 mock、金钥留空；
-#       Next 会因非默认 distDir 自动在 tsconfig.json 的 include 加两行，跑完已还原（未提交）。
-#       全新 clone 用默认 `npm run build` 的结果见 fresh-clone.txt。
-# 结果：typecheck exit 0 · lint exit 0（151 个文件 0 error / 0 warning）· build exit 0（无 whole-project tracing / ⚠ 警告）
-#       · prisma migrate status：1 个 migration、schema up to date · secret-scan exit 0（3 把机密值命中 0）
+# 执行时机：闸门在提交前的工作树上执行，跑完后直接 `git add -A` 提交为 072b471，中间没有再改任何文件（工作树内容 = 072b471）；
+#       同一个 commit 的全新 clone（默认 `npm run build`）见 fresh-clone.txt。
+# 说明：build 用 NEXT_DIST_DIR=.next-final（避免与其他 dev server 的 .next 锁冲突），并强制 mock、金钥留空；
+#       Next 会因非默认 distDir 自动在 tsconfig.json 的 include 加两行，跑完已还原（未提交），.next-final 已删除。
+# 结果：typecheck exit 0 · lint exit 0（153 个文件 0 error / 0 warning）· build exit 0（无 whole-project tracing / ⚠ 警告）
+#       · prisma migrate status：1 个 migration、schema up to date · secret-scan exit 0（3 把机密值命中 0；
+#       扫描范围是执行当下的工作树 214 个文件 + 当时的 git 历史 20 个 commit / 797 个物件）
 
 ## npm run typecheck（= next typegen && tsc --noEmit；先删 tsconfig.tsbuildinfo，完整检查）
 $ npm run typecheck
@@ -15,7 +17,7 @@ $ npm run typecheck
 
 Generating route types...
 ✓ Types generated successfully
-exit=0 (6s)
+exit=0 (5s)
 
 ## npm run lint（react-hooks/set-state-in-effect 为 error）
 $ npm run lint
@@ -23,37 +25,37 @@ $ npm run lint
 > siebo-captain@0.1.0 lint
 > eslint
 
-exit=0 (7s)
+exit=0 (5s)
 
 $ npx eslint . --format json → 统计
-files=151 errors=0 warnings=0
+files=153 errors=0 warnings=0
 
 $ grep set-state-in-effect eslint.config.mjs
 11:      "react-hooks/set-state-in-effect": "error",
 
 ## next build（完整输出，含路由表）
-$ env NEXT_DIST_DIR=.next-gate LLM_PROVIDER=mock DECISION_PROVIDER=mock GITHUB_VERIFY=mock EVOMAP_ENABLED=0 JEV_API_KEY= LLM_API_KEY= npx next build
+$ env NEXT_DIST_DIR=.next-final LLM_PROVIDER=mock DECISION_PROVIDER=mock GITHUB_VERIFY=mock EVOMAP_ENABLED=0 JEV_API_KEY= LLM_API_KEY= npx next build
 ▲ Next.js 16.3.5 (Turbopack)
 - Environments: .env
-✓ Running next.config.ts took 28ms
+✓ Running next.config.ts took 19ms
 
   Creating an optimized production build ...
-✓ Compiled successfully in 4.0s
+✓ Compiled successfully in 2.7s
   Running TypeScript ...
 
   We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
   The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
 
-  	- include was updated to add '.next-gate/types/**/*.ts'
-  	- include was updated to add '.next-gate/dev/types/**/*.ts'
+  	- include was updated to add '.next-final/types/**/*.ts'
+  	- include was updated to add '.next-final/dev/types/**/*.ts'
 
-  Finished TypeScript in 6.0s ...
+  Finished TypeScript in 4.0s ...
   Collecting page data using 17 workers ...
   Generating static pages using 17 workers (0/13) ...
   Generating static pages using 17 workers (3/13) 
   Generating static pages using 17 workers (6/13) 
   Generating static pages using 17 workers (9/13) 
-✓ Generating static pages using 17 workers (13/13) in 309ms
+✓ Generating static pages using 17 workers (13/13) in 247ms
   Finalizing page optimization ...
 
 Route (app)
@@ -114,21 +116,21 @@ Route (app)
 
 ƒ  (Dynamic)  server-rendered on demand
 
-exit=0 (14s)
+exit=0 (11s)
 
-$ 上面 build 输出中 grep -icE "whole project|tracing|⚠"（不含本行）
+$ grep -icE "whole project|tracing|⚠" <build 输出>
 0
 
-$ git diff --stat tsconfig.json（build 后已还原）
+$ git diff --stat tsconfig.json（build 后已还原，.next-final 已删除）
 (空 = 已还原)
 
 ## prisma migrate status（对 demo 数据库的副本；原档不动）
-$ env DATABASE_URL=file:<scratchpad>/gate/devcopy.db npx --no prisma migrate status
+$ env DATABASE_URL=file:<scratchpad>/final/devcopy.db npx --no prisma migrate status
 Loaded Prisma config from prisma.config.ts.
 
 Prisma config detected, skipping environment variable loading.
 Prisma schema loaded from prisma/schema.prisma
-Datasource "db": SQLite database "devcopy.db" at "file:<scratchpad>/gate/devcopy.db"
+Datasource "db": SQLite database "devcopy.db" at "file:<scratchpad>/final/devcopy.db"
 
 1 migration found in prisma/migrations
 
@@ -142,41 +144,41 @@ $ npm run secret-scan
 > node scripts/secret-scan.mjs
 
 [secret-scan] env 檔：.env、.env.live
-[secret-scan] 範圍：工作樹 212 個檔（已追蹤＋未忽略的新檔）；git 歷史 19 個 commit、786 個物件（--all，含二進位 blob 與 commit 訊息）
+[secret-scan] 範圍：工作樹 214 個檔（已追蹤＋未忽略的新檔）；git 歷史 20 個 commit、797 個物件（--all，含二進位 blob 與 commit 訊息）
 ## .env
-  DATABASE_URL（設定）：工作樹 6、歷史 11  （設定值，僅供參考）
+  DATABASE_URL（設定）：工作樹 6、歷史 13  （設定值，僅供參考）
   LLM_PROVIDER（設定）：略過（少於 8 字元）
-  LLM_BASE_URL（設定）：工作樹 6、歷史 18  （設定值，僅供參考）
+  LLM_BASE_URL（設定）：工作樹 6、歷史 20  （設定值，僅供參考）
   LLM_API_KEY（機密）：略過（空值）
-  LLM_MODEL（設定）：工作樹 8、歷史 21  （設定值，僅供參考）
+  LLM_MODEL（設定）：工作樹 8、歷史 24  （設定值，僅供參考）
   AUTH_DEV_LINKS（設定）：略過（少於 8 字元）
-  EVENT_NAME（設定）：工作樹 11、歷史 32  （設定值，僅供參考）
-  EVENT_CODE（設定）：工作樹 13、歷史 24  （設定值，僅供參考）
-  EVENT_STARTS_AT（設定）：工作樹 6、歷史 13  （設定值，僅供參考）
-  EVENT_ENDS_AT（設定）：工作樹 5、歷史 11  （設定值，僅供參考）
+  EVENT_NAME（設定）：工作樹 11、歷史 39  （設定值，僅供參考）
+  EVENT_CODE（設定）：工作樹 13、歷史 29  （設定值，僅供參考）
+  EVENT_STARTS_AT（設定）：工作樹 6、歷史 15  （設定值，僅供參考）
+  EVENT_ENDS_AT（設定）：工作樹 5、歷史 13  （設定值，僅供參考）
   DECISION_PROVIDER（設定）：略過（少於 8 字元）
   JEV_API_KEY（機密）：略過（空值）
-  JEV_MODEL（設定）：工作樹 3、歷史 8  （設定值，僅供參考）
+  JEV_MODEL（設定）：工作樹 3、歷史 9  （設定值，僅供參考）
   JEV_TIMEOUT_MS（設定）：略過（少於 8 字元）
-  EVOMAP_NODE_ID（設定）：工作樹 4、歷史 17  （設定值，僅供參考）
+  EVOMAP_NODE_ID（設定）：工作樹 4、歷史 20  （設定值，僅供參考）
   EVOMAP_NODE_SECRET（機密）：略過（空值）
   EVOMAP_ENABLED（設定）：略過（少於 8 字元）
 ## .env.live
-  DATABASE_URL（設定）：工作樹 6、歷史 11  （設定值，僅供參考）
+  DATABASE_URL（設定）：工作樹 6、歷史 13  （設定值，僅供參考）
   LLM_PROVIDER（設定）：略過（少於 8 字元）
-  LLM_BASE_URL（設定）：工作樹 6、歷史 18  （設定值，僅供參考）
+  LLM_BASE_URL（設定）：工作樹 6、歷史 20  （設定值，僅供參考）
   LLM_API_KEY（機密）：工作樹 0、歷史 0
-  LLM_MODEL（設定）：工作樹 8、歷史 21  （設定值，僅供參考）
+  LLM_MODEL（設定）：工作樹 8、歷史 24  （設定值，僅供參考）
   AUTH_DEV_LINKS（設定）：略過（少於 8 字元）
-  EVENT_NAME（設定）：工作樹 11、歷史 32  （設定值，僅供參考）
-  EVENT_CODE（設定）：工作樹 13、歷史 24  （設定值，僅供參考）
-  EVENT_STARTS_AT（設定）：工作樹 6、歷史 13  （設定值，僅供參考）
-  EVENT_ENDS_AT（設定）：工作樹 5、歷史 11  （設定值，僅供參考）
+  EVENT_NAME（設定）：工作樹 11、歷史 39  （設定值，僅供參考）
+  EVENT_CODE（設定）：工作樹 13、歷史 29  （設定值，僅供參考）
+  EVENT_STARTS_AT（設定）：工作樹 6、歷史 15  （設定值，僅供參考）
+  EVENT_ENDS_AT（設定）：工作樹 5、歷史 13  （設定值，僅供參考）
   DECISION_PROVIDER（設定）：略過（少於 8 字元）
   JEV_API_KEY（機密）：工作樹 0、歷史 0
-  JEV_MODEL（設定）：工作樹 3、歷史 8  （設定值，僅供參考）
+  JEV_MODEL（設定）：工作樹 3、歷史 9  （設定值，僅供參考）
   JEV_TIMEOUT_MS（設定）：略過（少於 8 字元）
-  EVOMAP_NODE_ID（設定）：工作樹 4、歷史 17  （設定值，僅供參考）
+  EVOMAP_NODE_ID（設定）：工作樹 4、歷史 20  （設定值，僅供參考）
   EVOMAP_NODE_SECRET（機密）：工作樹 0、歷史 0
   EVOMAP_ENABLED（設定）：略過（少於 8 字元）
 [secret-scan] 追蹤中的 .env*：.env.example

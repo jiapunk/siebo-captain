@@ -322,7 +322,7 @@ shots/                 # 靜態展示截圖（多數早於修正版，細節可�
 
 ## 🧪 測試
 
-E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測試在 `tests/unit/*.test.ts`（node:test）。目前 E2E 48 項（19 個 spec 檔）、單元 51 項（10 個檔）全數通過（commit `85ab163`，完整輸出見 `audit/evidence/test-run.txt`）；逐項斷言見 [AUDIT §2](./AUDIT.md)。
+E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測試在 `tests/unit/*.test.ts`（node:test）。目前 E2E 50 項（19 個 spec 檔）、單元 60 項（12 個檔）全數通過（commit `072b471`，完整輸出見 `audit/evidence/test-run.txt`）；逐項斷言見 [AUDIT §2](./AUDIT.md)。
 
 - E2E 用獨立測試 DB 與 mock 設定（見 `playwright.config.ts`），外部端點一律指向不可達的 `127.0.0.1:9`；測試截圖與下載檔寫到 `test-results/`（不進版控）
 - `tests/decision.spec.ts`：透過 `scripts/verify-decision.ts` 在本機 stub server 上驗證三段鏈實際回退、覆蓋不足重打、逐題 fallback、斷路器與逾時（完全離線）
