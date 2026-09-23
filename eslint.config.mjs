@@ -7,8 +7,8 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     rules: {
-      // fetch-on-mount 是本 MVP 的刻意模式（無 React Query），降為警告
-      "react-hooks/set-state-in-effect": "warn",
+      // fetch-on-mount 已改為在 effect 內以非同步回呼 setState（0 warning），恢復為 error 防止回歸
+      "react-hooks/set-state-in-effect": "error",
       // 允許 _ 前綴的未使用參數
       "@typescript-eslint/no-unused-vars": [
         "warn",

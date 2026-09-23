@@ -42,6 +42,8 @@ export default defineConfig({
   // 只收 Playwright spec；tests/unit/*.test.ts 由 npm run test:unit（node:test）執行
   testMatch: "**/*.spec.ts",
   globalSetup: "./tests/global-setup.ts",
+  // next dev 會把 .next-test-<port>/types 自動加進 tsconfig.json 的 include，跑完還原，工作區保持乾淨
+  globalTeardown: "./tests/global-teardown.ts",
   outputDir: "test-results/artifacts",
   timeout: 120_000,
   workers: 1,
