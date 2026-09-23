@@ -1,4 +1,6 @@
 /** 純資料字典（不依賴 React，server/client/canvas 皆可用） */
+import { EXT_A } from "./i18n-ext-a";
+import { EXT_B } from "./i18n-ext-b";
 
 export type Locale = "zh" | "cn" | "en" | "ja";
 
@@ -1099,7 +1101,13 @@ const cn: Dict = {
   "card.ready": "RADAR READY",
 };
 
-export const DICTS: Record<Locale, Dict> = { zh, cn, en, ja };
+// 擴充字典：新 key 寫在 i18n-ext-a.ts / i18n-ext-b.ts（ext 覆蓋主字典同名 key）
+export const DICTS: Record<Locale, Dict> = {
+  zh: { ...zh, ...EXT_A.zh, ...EXT_B.zh },
+  cn: { ...cn, ...EXT_A.cn, ...EXT_B.cn },
+  en: { ...en, ...EXT_A.en, ...EXT_B.en },
+  ja: { ...ja, ...EXT_A.ja, ...EXT_B.ja },
+};
 
 export function translate(
   locale: Locale,

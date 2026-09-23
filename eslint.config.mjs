@@ -21,6 +21,10 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     ".next-test/**",
+    // 其他 distDir（NEXT_DIST_DIR=.next-test-<port>、.next-<agent>）與測試輸出
+    ".next-*/**",
+    "test-results/**",
+    "playwright-report/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

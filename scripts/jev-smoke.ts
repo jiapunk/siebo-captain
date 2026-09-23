@@ -1,3 +1,5 @@
+import "dotenv/config"; // 讀取 .env 的 JEV_API_KEY 等設定（已存在的環境變數優先，不會被覆寫）
+
 /**
  * Jev 決策層煙霧測試
  *   npx tsx scripts/jev-smoke.ts            # 用 .env 的 JEV_API_KEY（無 key → 規則層）
