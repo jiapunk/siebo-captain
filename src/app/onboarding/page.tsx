@@ -40,13 +40,17 @@ export default function OnboardingPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api<{ profile: { status: string; interview: Turn[] | null } }>("/api/profile")
+    // interview：{ consentAt, sid, turns }；舊資料是純 Turn[]
+    api<{ profile: { status: string; interview: Turn[] | { turns?: Turn[] } | null } }>(
+      "/api/profile",
+    )
       .then(({ profile }) => {
         if (profile.status === "ready") {
           router.replace("/profile");
           return;
         }
-        const history = profile.interview ?? [];
+        const iv = profile.interview;
+        const history = (Array.isArray(iv) ? iv : iv?.turns) ?? [];
         setTurns(history);
         setDone(history.filter((t) => t.role === "user").length >= 6);
       })
@@ -79,9 +83,11 @@ export default function OnboardingPage() {
     setTurns([...turns, { role: "user", content, ts: Date.now() }]);
     setThinking(true);
     try {
+      // 第一則回答附上隱私告知的同意（伺服器在第一輪要求 consent: true，並記下同意時間）
+      const payload = turns.length === 0 ? { content, consent: agreed } : { content };
       const res = await api<{ reply: string; done: boolean }>(
         "/api/onboarding/message",
-        { method: "POST", body: JSON.stringify({ content }) },
+        { method: "POST", body: JSON.stringify(payload) },
       );
       setTurns((t) => [
         ...(t ?? []),
@@ -98,6 +104,13 @@ export default function OnboardingPage() {
       setInput(content);
       if (code === "unauthorized") {
         router.replace("/");
+        return;
+      }
+      if (code === "consent_required") {
+        // 伺服器端的訪談還是空的、但沒有同意紀錄：回到告知卡重新勾選
+        setAgreed(false);
+        setStarted(false);
+        setError(tr("b.onb.consentRequired"));
         return;
       }
       setError(apiErrorMessage(tr, e));
@@ -180,6 +193,7 @@ export default function OnboardingPage() {
               <li>{tr("b.onb.privacyAi")}</li>
               <li>{tr("b.onb.privacyScope")}</li>
               <li>{tr("b.onb.privacyDelete")}</li>
+              <li>{tr("b.onb.privacyRetention")}</li>
             </ul>
             {llmMode === "mock" && (
               <p className="mono mt-3 text-[11px] leading-relaxed text-muted">
@@ -195,8 +209,19 @@ export default function OnboardingPage() {
               />
               <span>{tr("b.onb.agree")}</span>
             </label>
+            {error && (
+              <div
+                role="alert"
+                className="mt-3 border border-amber bg-amber-soft p-2.5 text-xs text-ink-soft"
+              >
+                {error}
+              </div>
+            )}
             <button
-              onClick={() => setStarted(true)}
+              onClick={() => {
+                setError(null);
+                setStarted(true);
+              }}
               disabled={!agreed}
               className="btn btn-accent mt-4 w-full py-3 disabled:opacity-50"
             >

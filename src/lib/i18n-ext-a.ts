@@ -68,6 +68,8 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "agent.reevalNote":
       "這次出發的 {total} 場裡有 {n} 場是重新評估先前互盤過的對象（大家都見過一輪後，最久沒盤的先輪到）；雷達與組隊只採用每位對象最新一次的結果。",
     "agent.launchErrNone": "目前沒有可派出的對象——其他參賽者都正在互盤中、已與你成隊，或還沒建好檔案。",
+    "agent.launchErrNoEvent":
+      "你還沒加入任何活動——隊長只會在同一場活動的參賽者之間互盤。請在下方輸入主辦方給的活動 code，加入後再按「隊長出發」。",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -133,7 +135,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.agreementScore": "兩者一致性：分數差",
     "cmp.agreementDim": "五維平均差",
     "cmp.agreementNote":
-      "兩側讀的是同一份逐字稿；差距來自評分方式或 provider 不同，不代表哪一邊讀到更多訊號。",
+      "兩側讀同一份逐字稿。蜂群評分走決策層時（Jev；失敗退回 LLM 決策或規則），只看雙方各 6 個檔案欄位（暱稱、角色、技能、目標、可投入時間、協作風格）加逐字稿前 6000 字；這時單體 LLM 也只收到同樣的 6 個欄位與前 6000 字，輸入相同（更早快取的單體結果看的是完整公開檔案，重新執行即可對齊）。分差來自評分者、量尺或單次取樣的不同，不能解讀為蜂群的品質優勢。",
     "cmp.dims": "五維對照",
     "cmp.legendSwarm": "上排＝蜂群",
     "cmp.legendSolo": "下排＝單體",
@@ -206,6 +208,8 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "agent.reevalNote":
       "这次出发的 {total} 场里有 {n} 场是重新评估之前对盘过的对象（大家都见过一轮后，最久没盘的先轮到）；雷达与组队只采用每位对象最新一次的结果。",
     "agent.launchErrNone": "目前没有可派出的对象——其他参赛者都正在对盘中、已与你成队，或还没建好文件。",
+    "agent.launchErrNoEvent":
+      "你还没加入任何活动——队长只会在同一场活动的参赛者之间互盘。请在下方输入主办方给的活动 code，加入后再按「队长出发」。",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -271,7 +275,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.agreementScore": "两者一致性：分数差",
     "cmp.agreementDim": "五维平均差",
     "cmp.agreementNote":
-      "两侧读的是同一份逐字稿；差距来自评分方式或 provider 不同，不代表哪一边读到更多讯号。",
+      "两侧读同一份逐字稿。蜂群评分走决策层时（Jev；失败退回 LLM 决策或规则），只看双方各 6 个文件栏位（昵称、角色、技能、目标、可投入时间、协作风格）加逐字稿前 6000 字；这时单体 LLM 也只收到同样的 6 个栏位与前 6000 字，输入相同（更早缓存的单体结果看的是完整公开文件，重新执行即可对齐）。分差来自评分者、量尺或单次取样的不同，不能解读为蜂群的质量优势。",
     "cmp.dims": "五维对照",
     "cmp.legendSwarm": "上排＝蜂群",
     "cmp.legendSolo": "下排＝单体",
@@ -351,6 +355,8 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
       "{n} of the {total} matches in this run re-evaluate people you have already matched with (once everyone has been met, the least recently matched go first). The radar and squad formation use only the latest result per person.",
     "agent.launchErrNone":
       "No one available right now — every other participant is mid-match, already on your team, or has no profile yet.",
+    "agent.launchErrNoEvent":
+      "You haven't joined an event yet — your Captain only cross-checks participants in the same event. Enter the organizer's event code below, then deploy again.",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -418,7 +424,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.agreementScore": "Agreement: score gap",
     "cmp.agreementDim": "avg dimension gap",
     "cmp.agreementNote":
-      "Both sides read the same transcript. Gaps come from the scoring method or provider, not from one side seeing more signal.",
+      "Both sides read the same transcript. When the swarm scores through the decision layer (Jev, falling back to LLM decisions or rules), it sees only 6 profile fields per side (nickname, role, skills, goal, availability, working style) plus the first 6000 characters of the transcript; in that case the solo LLM also gets only those 6 fields and the first 6000 characters, so the inputs match (solo results cached before this change saw the full public profile; re-run to align). Score gaps come from a different scorer, a different scale, or single-sample noise, and cannot be read as a swarm quality advantage.",
     "cmp.dims": "Dimensions",
     "cmp.legendSwarm": "Top = swarm",
     "cmp.legendSolo": "Bottom = solo",
@@ -497,6 +503,8 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
       "今回の {total} 件のうち {n} 件は、以前に対戦済みの相手の再評価です（全員と一巡した後は、最も前に対戦した相手から順番に回ります）。レーダーとチーム編成は、相手ごとに最新の結果だけを使います。",
     "agent.launchErrNone":
       "今は出撃できる相手がいません——他の参加者は全員対戦中か、すでにチームメイトか、プロフィール未作成です。",
+    "agent.launchErrNoEvent":
+      "まだイベントに参加していません。隊長は同じイベントの参加者とだけ交差チェックします。下の欄に主催者のイベントコードを入力して参加してから、もう一度出撃してください。",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -564,7 +572,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.agreementScore": "一致度：スコア差",
     "cmp.agreementDim": "5 軸平均差",
     "cmp.agreementNote":
-      "両側とも同じ交信記録を読んでいます。差は評価方法や provider の違いによるもので、どちらかが多くの信号を読んだという意味ではありません。",
+      "両側とも同じ交信記録を読みます。スウォームの評価が決定層（Jev。失敗時は LLM 決定または規則に切り替え）を通る場合、各側 6 つのプロフィール項目（ニックネーム、役割、スキル、目標、参加できる時間、作業スタイル）と交信記録の先頭 6000 文字だけを見ます。この場合は単体 LLM にも同じ 6 項目と先頭 6000 文字だけを渡すので、入力は同じです（以前にキャッシュされた単体結果は公開プロフィール全体を見ています。再実行すると揃います）。スコア差は評価者・尺度・1 回だけのサンプリングの違いによるもので、スウォームの品質上の優位とは解釈できません。",
     "cmp.dims": "5 軸比較",
     "cmp.legendSwarm": "上段＝スウォーム",
     "cmp.legendSolo": "下段＝単体",

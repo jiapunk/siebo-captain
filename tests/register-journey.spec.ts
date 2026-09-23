@@ -53,6 +53,8 @@ test("註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼�
   // 新訪談要先勾選同意才開始（未勾選時按鈕不可按）
   const start = page.getByRole("button", { name: /開始訪談/ });
   await expect(start).toBeDisabled();
+  // 告知卡寫明保存期限：訪談原文編譯後刪除、活動結束 30 天後清除帳號
+  await expect(page.getByText(/編譯完成就刪除.*活動結束 30 天後/)).toBeVisible();
   await page.getByRole("checkbox", { name: /同意/ }).check();
   await start.click();
   const answers = [

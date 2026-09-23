@@ -22,6 +22,10 @@ export const LLM_MODE: "mock" | "real" | "hybrid" =
       ? "hybrid"
       : "mock";
 
+/**
+ * sessionId 會成為送往 LLM 供應商的 x-opencode-session header（見 real.ts）。
+ * 訪談與編譯傳的是每份檔案的隨機 id（存在 AgentProfile.interview 的 sid），不要傳 userId。
+ */
 export interface LLMClient {
   interviewTurn(
     transcript: { role: "agent" | "user"; content: string }[],

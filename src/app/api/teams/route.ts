@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
-import { latestUniqueHypotheses } from "@/lib/teamAssembler";
+import { latestRoundHypotheses } from "@/lib/teamAssembler";
 import type { TeamReport } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +27,9 @@ export async function GET() {
   });
   const userMap = new Map(users.map((u) => [u.id, u]));
 
-  // 最新一輪的假設（teamId=h:<userId>）；舊資料的反向重複 ID 同一組隊友只算最新一筆，與網絡模擬同一套計數
-  const evals = latestUniqueHypotheses(
+  // 最新一輪的假設（teamId=h:<userId>）：舊資料混著好幾輪 → 只取最新一筆 10 分鐘內的 part，
+  // 反向重複 ID 同一組隊友只算最新一筆；與網絡模擬同一套計數（teamAssembler.latestRoundHypotheses）
+  const evals = latestRoundHypotheses(
     await prisma.swarmPart.findMany({
       where: { teamId: `h:${uid}`, kind: "team_eval" },
       select: { id: true, status: true, provider: true, updatedAt: true },

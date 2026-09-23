@@ -28,8 +28,9 @@ test("動態內容四語系：隊長訪談回覆隨語系切換", async ({ page,
       const sw = await page.request.post("/api/session", { data: { userId: uid } });
       expect(sw.status(), await sw.text()).toBe(200);
 
+      // 新訪談的第一輪要帶隱私告知同意（consent: true）
       const res = await page.request.post("/api/onboarding/message", {
-        data: { content: "TypeScript React 全程投入 想拿獎" },
+        data: { content: "TypeScript React 全程投入 想拿獎", consent: true },
       });
       expect(res.status(), await res.text()).toBe(200);
       const { reply } = (await res.json()) as { reply: string };

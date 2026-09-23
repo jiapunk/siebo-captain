@@ -5,7 +5,7 @@ import { roleGroup } from "./llm/mock";
 import { isRedacted, publicProfile } from "./profile";
 import {
   blendTeamScore,
-  latestUniqueHypotheses,
+  latestRoundHypotheses,
   passesHardConstraints,
   pickNonOverlapping,
   teamEvalScore,
@@ -262,12 +262,13 @@ export async function buildNetwork(userId: string): Promise<NetworkPayload> {
       : Math.round(((2 * edges.size) / nodes.length) * 100) / 100;
 
   // ---- 兩種信號的模擬：只用「最新一輪」組裝的假設（teamId=h:<userId>，舊輪次已封存） ----
-  // 舊資料可能有反向重複的假設 ID（t:o:a:b／t:o:b:a）→ 同一組隊友只算最新一筆
-  const parts = latestUniqueHypotheses(
+  // 舊資料沒有封存、還可能有反向重複的假設 ID（t:o:a:b／t:o:b:a）→ latestRoundHypotheses 切出最新一輪並去重；
+  // 先切輪次再取 done，最新一輪全部失敗時不會退回去用上一輪
+  const parts = latestRoundHypotheses(
     await prisma.swarmPart.findMany({
-      where: { kind: "team_eval", teamId: `h:${userId}`, status: "done" },
+      where: { kind: "team_eval", teamId: `h:${userId}` },
     }),
-  );
+  ).filter((p) => p.status === "done");
   let sim: NetworkPayload["sim"] = null;
   if (parts.length > 0) {
     const hyps: SimHypothesis[] = parts

@@ -85,6 +85,8 @@ export default function AgentPage() {
   const [note, setNote] = useState<string | null>(null);
   const [eventCode, setEventCode] = useState("");
   const [joinedEvent, setJoinedEvent] = useState<string | null>(null);
+  /** 出發被擋在 409 no_event：就算 /api/me 的活動資訊過期，也把加入活動的卡片叫出來 */
+  const [needEvent, setNeedEvent] = useState(false);
   const [joining, setJoining] = useState(false);
   const [evomap, setEvomap] = useState<{
     enabled: boolean;
@@ -201,9 +203,11 @@ export default function AgentPage() {
       setMsg(
         apiErrorText(e, t, "agent.launchErr", {
           no_candidates: "agent.launchErrNone",
+          no_event: "agent.launchErrNoEvent",
           profile_not_ready: "agent.launchErrProfile",
         }),
       );
+      if (e instanceof ApiError && e.code === "no_event") setNeedEvent(true);
       // 上一輪還在跑：把那幾場展開，直接看進度
       if (e instanceof ApiError && e.code === "already_running") {
         const ids = Array.isArray(e.body.runIds)
@@ -384,7 +388,7 @@ export default function AgentPage() {
           </div>
         )}
 
-        {!me.event && !joinedEvent && (
+        {(!me.event || needEvent) && !joinedEvent && (
           <div className="card cut rise-in mt-3">
             <div className="p-4">
               <div className="tag mb-1.5">{t("agent.joinTag")}</div>

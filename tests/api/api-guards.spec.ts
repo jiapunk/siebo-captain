@@ -70,7 +70,7 @@ test.afterAll(async () => {
 /** 建一個真人帳號（有 email；預設已驗證、已加入活動） */
 async function makeUser(
   tag: string,
-  opts: { verified?: boolean; ready?: boolean } = {},
+  opts: { verified?: boolean; ready?: boolean; noEvent?: boolean } = {},
 ): Promise<string> {
   const u = await db.user.create({
     data: {
@@ -89,7 +89,7 @@ async function makeUser(
             }
           : { status: "draft", interview: [] },
       },
-      events: { create: { eventId } },
+      ...(opts.noEvent ? {} : { events: { create: { eventId } } }),
     },
   });
   createdUsers.push(u.id);
@@ -279,6 +279,25 @@ test("隊長出發：執行中重送 409 already_running；多工串流一條連
   expect(runs).toBe(0);
 });
 
+test("隊長出發：沒有加入活動 → 409 no_event，不跨活動配對、不建立任何 run", async ({ baseURL }) => {
+  const lone = await makeUser("noEvent", { ready: true, noEvent: true });
+  expect(await db.eventMember.count({ where: { userId: lone } })).toBe(0);
+  // 其他活動成員都在（種子 bot 是 ready 的）：舊版會拿他們當候選
+  expect(await db.user.count({ where: { id: { not: lone }, profile: { status: "ready" } } })).toBeGreaterThan(0);
+  const c = await login(lone, baseURL);
+
+  const res = await c.post("/api/matching/run", { data: {} });
+  expect(res.status(), await res.text()).toBe(409);
+  expect(await res.json()).toEqual({ error: "no_event" });
+  expect(
+    await db.matchRun.count({ where: { OR: [{ userAId: lone }, { userBId: lone }] } }),
+  ).toBe(0);
+
+  // /api/me 也沒有活動 → /agent 會顯示加入活動的卡片
+  const me = await c.get("/api/me").then((r) => r.json());
+  expect(me.user?.event).toBeNull();
+});
+
 test("持續聯絡：真人對真人要對方接受；重複邀請不產生重複資料；未驗證帳號被擋", async ({ baseURL }) => {
   const e = await makeUser("connE");
   const f = await makeUser("connF");
@@ -410,7 +429,7 @@ test("組隊：兩位真人都同意才成立；bot 視為已同意；成立後�
   expect(await db.ledgerEvent.count({ where: { refId: team.id, kind: "team_joined" } })).toBe(2);
 });
 
-test("訪談：訊息長度上限、壞 JSON 回 400", async ({ baseURL }) => {
+test("訪談：訊息長度上限、壞 JSON 回 400、第一輪要同意（存 consentAt 與隨機 sid）", async ({ baseURL }) => {
   const u = await makeUser("onb");
   const cu = await login(u, baseURL);
   const long = await cu.post("/api/onboarding/message", { data: { content: "字".repeat(1001) } });
@@ -422,6 +441,38 @@ test("訪談：訊息長度上限、壞 JSON 回 400", async ({ baseURL }) => {
   });
   expect(bad.status()).toBe(400);
   expect((await bad.json()).error).toBe("invalid_json");
-  const ok = await cu.post("/api/onboarding/message", { data: { content: "我是前端，全程投入" } });
+  // 第一輪要帶 consent: true（隱私告知同意），否則 400 consent_required、什麼都不寫入
+  for (const data of [
+    { content: "我是前端" },
+    { content: "我是前端", consent: false },
+    { content: "我是前端", consent: "yes" },
+  ]) {
+    const noConsent = await cu.post("/api/onboarding/message", { data });
+    expect(noConsent.status(), JSON.stringify(data)).toBe(400);
+    expect((await noConsent.json()).error).toBe("consent_required");
+  }
+  expect((await db.agentProfile.findUnique({ where: { userId: u } }))?.interview).toEqual([]);
+
+  const ok = await cu.post("/api/onboarding/message", {
+    data: { content: "我是前端，全程投入", consent: true },
+  });
   expect(ok.status(), await ok.text()).toBe(200);
+  // 同意時間存進 interview；送 LLM 的 sessionId 是這份檔案的隨機 id，不是 userId
+  const doc = (await db.agentProfile.findUnique({ where: { userId: u } }))?.interview as {
+    consentAt?: unknown;
+    sid?: unknown;
+    turns?: { role: string }[];
+  };
+  expect(typeof doc.consentAt).toBe("number");
+  expect(doc.sid).toMatch(/^[0-9a-f]{32}$/);
+  expect(doc.sid).not.toBe(u);
+  expect(doc.turns?.map((t) => t.role)).toEqual(["user", "agent"]);
+
+  // 之後的回合不必再帶 consent；consentAt 與 sid 沿用
+  const next = await cu.post("/api/onboarding/message", { data: { content: "想拿獎" } });
+  expect(next.status(), await next.text()).toBe(200);
+  const doc2 = (await db.agentProfile.findUnique({ where: { userId: u } }))?.interview as typeof doc;
+  expect(doc2.consentAt).toBe(doc.consentAt);
+  expect(doc2.sid).toBe(doc.sid);
+  expect(doc2.turns).toHaveLength(4);
 });

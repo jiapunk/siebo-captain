@@ -53,11 +53,11 @@
 |---|---|---|
 | 注册 / 验证 / 密码重设 | `register-journey.spec.ts` | 注册 → 未验证时发起配对得 403 `email_unverified` → 验证 → 访谈 → 组队 → 聊天 → 重登 → 密码重设 → 旧密码失效 |
 | 真账号、场次与认证闸门 | `auth.spec.ts` | 注册、加入场次（错误 code 得 404）、登出、登录、错误密码提示；未登录时受保护 API 回 401、需要身份的页面导回首页 |
-| 认证与账号安全 | `api/auth-security.spec.ts` | 手动塞 `sd_uid` 也冒用不了真账号；`/api/users` 只列示范身份、不含 email；`POST /api/session` 对真账号 403、真 session 优先；登录失败第 9 次 429（换 `X-Forwarded-For` 也绕不过）；注册同 email 第 6 次 429；forgot 对存在与不存在的账号响应同形状且不外泄链接；`PUT /api/profile` 不能写入 github；跨来源 POST 得 403 `bad_origin`；`DELETE /api/me` 后无法再登录、种子角色不可删 |
-| API 守门 | `api/api-guards.spec.ts` | `/compare` 非当事人读不到也不能重跑、当事人每分钟 1 次；多工逐字稿串流的权限与参数检查；执行中重送「队长出发」得 409 `already_running`；真人对真人联络需对方接受、重复邀请不重复建立、未验证账号被挡；组队需两位真人都同意、bot 视为已同意；访谈长度上限与坏 JSON 得 400 |
+| 认证与账号安全 | `api/auth-security.spec.ts` | 手动塞 `sd_uid` 也冒用不了真账号；`/api/users` 只列示范身份、不含 email；`POST /api/session` 对真账号 403、真 session 优先；登录失败第 9 次 429（换 `X-Forwarded-For` 也绕不过）；注册同 email 第 6 次 429；forgot 对存在与不存在的账号响应同形状且不外泄链接；`PUT /api/profile` 不能写入 github；跨来源 POST 得 403 `bad_origin`；`DELETE /api/me` 后无法再登录、种子角色不可删；编译完成后访谈原文已清空、只留 `consentAt`；删除账号后对方的 `/api/agent/runs` 不再列出那场 run |
+| API 守门 | `api/api-guards.spec.ts` | `/compare` 非当事人读不到也不能重跑、当事人每分钟 1 次；多工逐字稿串流的权限与参数检查；执行中重送「队长出发」得 409 `already_running`；没有加入活动的用户「队长出发」得 409 `no_event`、不建立任何 run；真人对真人联络需对方接受、重复邀请不重复建立、未验证账号被挡；组队需两位真人都同意、bot 视为已同意；访谈长度上限与坏 JSON 得 400；访谈第一轮不带 `consent: true` 得 400 `consent_required`，同意后存 `consentAt` 与随机 `sid`（不是 userId） |
 | 双方门槛 | `unit/pairGate.test.ts` | 门槛常数 50 / 60；依视角对调 mine / theirs；缺报告为 null；雷达分级看较低分；`bothPass` 双方 ≥60；每位对象只取最新一笔 run |
 | 决策层 | `decision.spec.ts` + `unit/decide.test.ts` | E2E（完全离线：`scripts/verify-decision.ts` 在本机 stub server 上用真的 fetch 触发各情境，外部地址一律指向 127.0.0.1:9）：链顺序；fallback 实际穿过三段（Jev 401 → LLM 接手、LLM 坏 JSON → 规则、Jev 连不上 → 规则）；覆盖不足只重打缺漏题；逐题 fallback；断路器连续 3 次后跳过；超时涵盖读 body 且 hybrid 报告带 `decisionSource=jev` 与规则对照分；`jev-smoke` CLI 不连外。单元：答案范围与枚举验证、逐题 fallback 且只重打缺漏题、第 2 次失败时保留第 1 次的部分答案、远端 0 题有效时 source 为 mock、超时涵盖读 body、断路器（连续 3 次才打开、成功归零、半开只放一个探测、并行时只有一个真的送出） |
-| 蜂群 P0 / P1 | `swarm.spec.ts` + `unit/retain.test.ts` + `unit/teamAssembler.test.ts` + `unit/append-event.test.ts` | E2E：run 卡显示 `PARTS 6/6`、`RETAIN`、`HYPOTHESES n` 与候选队伍；勾「故障演练」后 Part 首次失败 → `R1` 重试接力，run 仍完整 6/6。单元：RETAIN 量测（直通保留、夹限 / 规则覆写 / 逐题退回不保留）；假设 ID 与顺序无关；硬约束；不重叠贪婪最多 3 队；team_eval 的 RETAIN；重新组队只收回自己上一轮、没有其他真人同意的提案；旧数据反向重复的假设 ID 同一组队友只留最新一笔；同一个 run 并行追加事件不遗失 |
+| 蜂群 P0 / P1 | `swarm.spec.ts` + `unit/retain.test.ts` + `unit/teamAssembler.test.ts` + `unit/append-event.test.ts` + `unit/matching-event.test.ts` + `unit/compare-input.test.ts` | E2E：run 卡显示 `PARTS 6/6`、`RETAIN`、`HYPOTHESES n` 与候选队伍；勾「故障演练」后 Part 首次失败 → `R1` 重试接力，run 仍完整 6/6。单元：RETAIN 量测（直通保留、夹限 / 规则覆写 / 逐题退回不保留）；假设 ID 与顺序无关；硬约束；不重叠贪婪最多 3 队；team_eval 的 RETAIN；重新组队只收回自己上一轮、没有其他真人同意的提案；旧数据反向重复的假设 ID 同一组队友只留最新一笔；旧数据只取最新一轮（与该 owner 最新一笔 team_eval 相差 10 分钟内；一轮 15 组 + 前一轮 6 组旧 ID → 只剩 15，对应 demo 数据 h:seed-里歐 21→15）；没有 EventMember 的用户拿不到候选、startMatching 丢 NO_EVENT、不建 run，有活动时候选只限同一场活动；每场 runPair 的 promise 交给 defer（路由用 after() 追踪），等它们结束后 run 收尾为 completed；单体对齐决策层的 6 个字段、蜂群 `r:A` 是否走决策层的判定；同一个 run 并行追加事件不遗失 |
 | 本机退路与失败分支 | `fallback.spec.ts` | real 模式、LLM 端点指向黑洞：首个提问 Part 退回本机脚本、本场后续 Part 降级，run 仍 completed，指挥台标 `LOCAL-FB`；没有退路的 `team_eval` Part 一直失败 → `SwarmPart` 记 failed、错误往上抛 |
 | Ledger + 网络图 | `network.spec.ts` + `unit/network.test.ts` + `unit/ledger.test.ts` | E2E：组队与聊天后 `/api/network` 有边、有双信号模拟、能力分上升。单元：标准聚类（三角形 = 1、路径 = 0、孤立 / degree 1 记 0 并计入平均）；双信号模拟选出三人队时聚类 > 0 且两种信号可区分；能力分公式、权重上限、夹在 30–98 |
 | 其他引擎规则 | `unit/engine-misc.test.ts` | 候选排序（未互盘真人优先、上限 5）；dealbreakers 默认不外送；`sanitizeProfile` 的型别与长度收敛；mock 团队回复不再丢失语系 |
@@ -88,8 +88,8 @@
 | 决策层 vs 规则层 Δ | +6 / +14 / +12 / +12 / +14，平均 **+11.6**（n = 5） | 同上，`score - ruleScore` | 与手写规则的分歧，不是决策层的「贡献」 |
 | 蜂群覆盖 / RETAIN | 每场 `PARTS 6/6`、retries 0、fallbacks 0；修正版新跑的 4 场 `RETAIN 8/8`（mock）。demo 数据里 2026-09-22 的 5 场由修正前代码写入，没有 `retention`，其 `retainedPct=100` 来自旧版旗标，**不算**新定义的量测 | 同上，`parts`（`done`、`retries`、`fallbacks`、`retainedPct`）与 `myReport.retention`（`kept` / `slots`） | RETAIN 只量报告 Part：8 个决策 slot 是否原封不动进入报告（夹限、规则覆写、逐题退回都算不保留）。`retention.kept/slots` 是单份报告；`retainedPct` 是两个报告 Part 中完全保留的比例（只会是 0 / 50 / 100%）；mock 模式规则层直通，恒为全数保留 |
 | 合作网络 | 9 节点 / 6 边 / 平均度 1.33 / 聚类系数 **0.48**（手算核对：(1/3 + 4) / 9 = 0.481） | `GET /api/network` → `metrics` | 标准平均聚类（同 networkx `average_clustering`：degree < 2 的节点记 0 并计入平均）。旧证据的 0.87 是排除孤立节点的旧算法，已作废 |
-| 双信号模拟 | 10 个假设；social：8 边（+2）、聚类 0.55、第二队选 Kiwi + 里歐；competence：6 边（+0）、聚类 0.48、第二队选 Kiwi + 小滿 —— 两种信号选出不同队伍 | `GET /api/network` → `sim.social` / `sim.competence`；`GET /api/teams` → `swarm.hypotheses`（同为 10） | 只用当前用户最新一轮的 team_eval 假设；旧数据里同一组队友有 `t:o:a:b` / `t:o:b:a` 两笔时只算最新一笔（去重前是 16 笔，旧证据的「16 个假设」即此）；每队 = 本人 + 两位队友的三角形 |
-| 单体 vs 蜂群（队长） | 评分步骤：蜂群 `r:A`（Jev）1,492 ms / 1 次调用 vs 单体（LLM，沿用蜂群逐字稿）22,904 ms / 1 次调用；分数 81 vs 76（维度平均差 9.2）；蜂群全流程 46,036 ms（对谈 44,070 ms，不与单体比）；n = 1 场；demo 数据是修正前写入的，没有 token 记录（`tokens` 为 null） | `GET /api/compare?runId=…` → `timing.scoringMs`、`callBreakdown.scoringComparable`、`scoringSource`、`reusesSwarmTranscript` | 单体沿用蜂群已生成的逐字稿，只重做评分；公平可比的是评分步骤；以 A 方视角；每场只有 1 次单体取样 |
+| 双信号模拟 | Demo阿飛 最新一轮只有 **3 个假设**（2026-09-22 07:46 UTC，候选 老吳 / 小綠 / 里歐）；social 与 competence 都只选出 老吳 + 小綠 一队：6 边（+0）、聚类 0.48、跨角色群连结 5 —— 这份数据上两种信号看不出差异。参考：切换到示范身份 里歐（最新一轮 15 个假设），两种信号也选出相同的 3 队（13 边、+7、聚类 0.64） | `GET /api/network` → `sim.social` / `sim.competence`；`GET /api/teams` → `swarm.hypotheses`（同为 3） | 只用当前用户最新一轮（与最新一笔相差 10 分钟内）的 team_eval 假设，旧数据里同一组队友有 `t:o:a:b` / `t:o:b:a` 两笔时只算最新一笔：Demo阿飛 原始 16 笔 → 去重 10 笔 → 最新一轮 3 笔。旧证据的「10 个假设」与「两种信号选出不同队伍」是混了多轮的结果，已作废；每队 = 本人 + 两位队友的三角形 |
+| 单体 vs 蜂群（队长） | 评分步骤：蜂群 `r:A`（Jev）1,492 ms / 1 次调用 vs 单体（LLM，沿用蜂群逐字稿）22,904 ms / 1 次调用；分数 81 vs 76（维度平均差 9.2）；蜂群全流程 46,036 ms（对谈 44,070 ms，不与单体比）；n = 1 场；demo 数据是修正前写入的，没有 token 记录（`tokens` 为 null） | `GET /api/compare?runId=…` → `timing.scoringMs`、`callBreakdown.scoringComparable`、`scoringSource`、`reusesSwarmTranscript` | 单体沿用蜂群已生成的逐字稿，只重做评分；公平可比的是评分步骤；以 A 方视角；每场只有 1 次单体取样。demo 那份单体 baseline 建于修正前：Jev 只看 6 个档案字段＋逐字稿前 6000 字，单体 LLM 看完整公开档案（`solo.extra.input = "public-profile"`），两边的评分者与输入都不同；修正版重跑时单体只收到同样的 6 个字段与长度（输入对齐），评分者仍不同。81 vs 76 的分差不能解读为蜂群的质量优势 |
 | 单体 vs 蜂群（月老） | 见 surrodate 仓库 | — | 本次未复核 |
 
 ---
@@ -146,7 +146,7 @@
 | 跨站请求 | `src/proxy.ts`：非 GET / HEAD 且 Origin 与 Host 不符 → 403 `bad_origin` | `api/auth-security.spec.ts` |
 | 分享权限 | 关闭的字段在互盘、组队、网络图、对方的破冰卡都以 `publicProfile` 投影后才使用；合作地雷默认不外送 | `unit/engine-misc.test.ts`；`src/lib/profile.ts` |
 | GitHub 比对 | 只比对公开资料，**不证明账号所有权**（`ownershipVerified:false`）；排除 fork；缓存 10 分钟；`PUT /api/profile` 不能伪造比对结果 | `api/auth-security.spec.ts`（不能写入 github） |
-| 删除账号 | `DELETE /api/me` 删除账号与个人资料、清掉 cookie；种子角色不可删 | `api/auth-security.spec.ts` |
+| 删除账号 | `DELETE /api/me` 删除账号与个人资料、清掉 cookie；种子角色不可删；档案编译完成即清空访谈原文（只留 `consentAt`）；保存期限：活动结束 30 天后清除非种子账号（目前由营运者手动执行） | `api/auth-security.spec.ts` |
 | EvoMap 管理动作 | `POST /api/evomap` 仅限 `EVOMAP_ADMIN_USER_IDS` 中以密码登录的真账号，其他一律 403；每人每分钟 6 次 | `evomap.spec.ts` |
 | EvoMap 凭证 | `node_secret` 只存在本地 `.env`，不入库；证据已去敏 | `evomap.txt` |
 | 依赖漏洞 | `npm audit` 报 3 个 high（prisma CLI → @prisma/config → deepmerge-ts），只在 CLI，不在运行时 bundle；不要执行 `npm audit fix --force`（会降级 prisma） | `npm audit` |
@@ -155,7 +155,7 @@
 
 | 第三方 | 何时送出 | 送出内容 |
 |---|---|---|
-| LLM 供应商（`LLM_BASE_URL`，默认 OpenCode Go / DeepSeek） | real / hybrid 且有 `LLM_API_KEY` | 访谈回答全文（包括用户在访谈中提到的合作地雷）与档案编译；互盘提问 / 作答 / 报告（双方只送投影后的档案 + 逐字稿）；破冰卡（本人完整档案 + 对方投影后的档案）；有模拟队友的群聊与私信最近 20 则；决策层退到 LLM 时的决策题状态。请求头带 `x-opencode-session`（userId / runId / teamId / connectionId，供应商端可借此关联同一用户的请求） |
+| LLM 供应商（`LLM_BASE_URL`，默认 OpenCode Go / DeepSeek） | real / hybrid 且有 `LLM_API_KEY` | 访谈回答全文（包括用户在访谈中提到的合作地雷）与档案编译；互盘提问 / 作答 / 报告（双方只送投影后的档案 + 逐字稿）；破冰卡（本人完整档案 + 对方投影后的档案）；有模拟队友的群聊与私信最近 20 则；决策层退到 LLM 时的决策题状态。请求头带 `x-opencode-session`（访谈与档案编译＝每份档案的随机 id；互盘＝runId、团队聊天＝teamId、私信＝connectionId） |
 | Jev（`JEV_BASE_URL`，TypeSafe） | 非 mock 模式、有 `JEV_API_KEY`，且 `DECISION_PROVIDER` 不是 mock | 互盘评分：双方投影后的档案摘要 + 逐字稿；队伍评估：三位成员投影后的档案摘要 |
 | GitHub API | 用户按下 GitHub 比对，且 `GITHUB_VERIFY` 不是 mock | 用户输入的 GitHub 用户名 |
 | EvoMap | `EVOMAP_ENABLED=1`，由 CLI 或管理员账号触发 | 组队汇总统计（队伍数、平均分、provider、Part 完成数），不含用户 id 或姓名；心跳只送节点凭证 |
@@ -164,16 +164,16 @@
 
 ## 7. 已知限制与诚实声明
 
-1. **单机架构**：SQLite；SSE 的 bus 是进程内 EventEmitter；节流、锁、断路器都是进程内内存。多实例或 serverless 部署时各实例各算各的，群聊 / 私信的即时事件不互通（run 串流另有每 3 秒的 DB 轮询补送）。互盘是响应后的背景 promise，serverless 不保证跑完
+1. **单机架构**：SQLite；SSE 的 bus 是进程内 EventEmitter；节流、锁、断路器都是进程内内存。多实例或 serverless 部署时各实例各算各的，群聊 / 私信的即时事件不互通（run 串流另有每 3 秒的 DB 轮询补送）。互盘在响应后执行，已用 `after()` 追踪（`/api/matching/run`，`maxDuration` 300 秒；自架 graceful shutdown 与平台 waitUntil 都会等）；超过平台时限仍会被中止（超过 10 分钟仍在 running 的 run 收尾为 failed），serverless 要稳定执行仍需工作队列
 2. **节流在内存**：重启即归零；没设 `TRUST_PROXY=1` 时所有直连用户共用「每来源」额度
 3. **GitHub 比对不证明账号所有权**：只看公开 repo 的语言分布；设计 / 简报等非程序技能无法由此验证
 4. **现场数据需要付费 key**：Jev 评分、`/compare` 延迟、token 用量只能在 hybrid 模式加付费 key 下重现；LLM 有随机性
-5. **`/compare` 不是统计实验**：每场只有一次单体取样，单体沿用蜂群已生成的逐字稿；hybrid 下两边评分 provider 不同
+5. **`/compare` 不是统计实验**：每场只有一次单体取样，单体沿用蜂群已生成的逐字稿；hybrid 下两边评分 provider 不同；hybrid 下 Jev 只看双方各 6 个档案字段加逐字稿前 6000 字，修正版的单体 LLM 在蜂群走决策层时也只收到同样的字段与长度（demo 数据库里唯一那份单体 baseline 建于修正前，看的是完整公开档案）；评分者与量尺不同，分差不能解读为蜂群的质量优势
 6. **流程不中断的范围**：LLM Part 重试后仍失败会改用本机脚本并让本场后续 Part 降级，但断网时每场最坏要等约 3 分钟才降级；数据库写入失败或进程重启仍会中断（超过 10 分钟仍在 running 的 run 会被收尾为 failed）。现场网络不稳时，最稳的做法是 `.env` 改 `LLM_PROVIDER=mock` 后重启
 7. **没有 SMTP**：Email 验证靠 `AUTH_DEV_LINKS=on` 把链接放在响应里；密码重设链接默认不回传，正式环境目前无法自助重设密码
 8. **注册仍会回 409 `email_taken`**：可借此得知 email 是否已注册（已节流）
 9. **未验证 email 的用户仍可能被别人的队长选为互盘候选**（闸门只挡他自己发起的动作）
-10. **隐私告知只在前端把关**：新访谈开始前（`/onboarding`）显示告知卡——回答会送到第三方 AI 服务处理、服务器可能在用户所在地区以外、分享权限挡不住 AI 服务处理、可随时删除账号——勾选同意后才开始；已有回答的访谈不再显示。服务器没有记录同意时间，也不会拦截未经此页直接调用 `/api/onboarding/message` 的请求。访谈与档案编译送往 LLM 供应商的请求头 `x-opencode-session` 仍是 userId（见 §6 数据流表）
+10. **保存期限靠人工执行**：访谈前告知卡写明「访谈原文编译完成即删除；活动结束 30 天后清除所有参赛者账号与相关数据」。前者由 `/api/onboarding/compile` 执行；后者目前没有自动排程或清除脚本，要由营运者手动执行，此修正前已编译的档案也需一次性清空访谈原文。服务器会检查同意：新访谈第一轮必须带 `consent: true`（否则 400 `consent_required`），同意时间存进 interview JSON；同意机制上线前已开始的访谈不再要求同意
 11. **EvoMap**：资产待审核（candidate / quarantine），平台对自包含 validation 标记 `validation_status: noop`；v1 无法公开验证；v2 的 `execution_trace` 与 `success_streak` 是旧产生器的常数，修正后的产生器尚未重新发布
 12. **lint**：`react-hooks/set-state-in-effect` 已恢复为 error，全仓 0 error / 0 warning（旧版曾降为 warn 并有 11 个 warning）
 13. **活动时间依赖 `.env`**（`EVENT_STARTS_AT` / `EVENT_ENDS_AT`）；变更后需 `npm run db:seed`（格式错误会在动数据前中止）

@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   composeTeamReport,
   enumerateHypotheses,
+  HYPOTHESIS_ROUND_WINDOW_MS,
   hypothesisId,
+  latestRoundHypotheses,
   latestUniqueHypotheses,
   localTeamAnswers,
   measureTeamRetention,
@@ -166,4 +168,53 @@ test("舊資料的反向重複假設 ID：同一組隊友只留最新一筆", ()
     at("t:me:c:b", 10),
   ]);
   assert.deepEqual(out.map((p) => p.id).sort(), ["t:me:a:b", "t:me:b:c", "t:me:c:a"]);
+});
+
+test("latestRoundHypotheses：只留最新一筆 10 分鐘內的那一輪，再去掉反向重複", () => {
+  const T = Date.UTC(2026, 8, 23, 8, 38, 27);
+  const at = (id: string, t: number) => ({ id, updatedAt: new Date(t) });
+  const MIN = 60_000;
+  const out = latestRoundHypotheses([
+    // 兩天前那一輪（舊版未封存、未排序 ID）
+    at("t:me:x:y", T - 2 * 24 * 60 * MIN),
+    at("t:me:a:z", T - 2 * 24 * 60 * MIN),
+    // 11 分鐘前：超出時間窗
+    at("t:me:b:a", T - 11 * MIN),
+    // 最新一輪（跨 3 秒）＋同輪裡的反向重複
+    at("t:me:a:b", T - 3_000),
+    at("t:me:c:a", T - 1_000),
+    at("t:me:a:c", T - 2_000),
+    at("t:me:b:c", T),
+    // 剛好在時間窗邊界：保留
+    at("t:me:a:d", T - HYPOTHESIS_ROUND_WINDOW_MS),
+  ]);
+  assert.deepEqual(out.map((p) => p.id).sort(), ["t:me:a:b", "t:me:a:d", "t:me:b:c", "t:me:c:a"]);
+});
+
+test("latestRoundHypotheses：每位 owner 各自以自己的最新一筆為準；空陣列回空陣列", () => {
+  const MIN = 60_000;
+  const at = (id: string, t: number) => ({ id, updatedAt: new Date(t) });
+  const out = latestRoundHypotheses([
+    at("t:o1:a:b", 100 * MIN),
+    at("t:o1:a:c", 50 * MIN), // o1 的舊輪次
+    at("t:o2:a:b", 10 * MIN), // o2 只有一輪，比 o1 早很多也要保留
+    at("t:o2:a:c", 9 * MIN),
+  ]);
+  assert.deepEqual(out.map((p) => p.id).sort(), ["t:o1:a:b", "t:o2:a:b", "t:o2:a:c"]);
+  assert.deepEqual(latestRoundHypotheses([]), []);
+});
+
+test("latestRoundHypotheses：C(6,2)=15 組的一輪加上前一輪的 6 組舊 ID → 只剩 15", () => {
+  const MIN = 60_000;
+  const ids = ["p1", "p2", "p3", "p4", "p5", "p6"];
+  const round: { id: string; updatedAt: Date }[] = [];
+  for (let i = 0; i < ids.length; i++)
+    for (let j = i + 1; j < ids.length; j++)
+      round.push({ id: hypothesisId("me", ids[i], ids[j]), updatedAt: new Date(1000 * MIN + i * 1000 + j) });
+  const legacy = ["q1", "q2", "q3", "q4"].flatMap((x, i, arr) =>
+    arr.slice(i + 1).map((y) => ({ id: `t:me:${y}:${x}`, updatedAt: new Date(10 * MIN) })),
+  );
+  const out = latestRoundHypotheses([...legacy, ...round]);
+  assert.equal(out.length, 15);
+  assert.ok(out.every((p) => p.updatedAt.getTime() >= 1000 * MIN));
 });

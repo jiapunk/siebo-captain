@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import type { MatchReport, RunEvent, VisibilityMap } from "./types";
+import type { HackathonProfile, MatchReport, RunEvent, VisibilityMap } from "./types";
 import { profileFromRow, publicProfile } from "./profile";
 import { LLM_MODE } from "./llm";
 import { withMeter, type CallMeter } from "./llm/meter";
@@ -14,6 +14,9 @@ import * as mock from "./llm/mock";
  * 公平比較請看 timing.scoringMs（蜂群 r:A 評分 Part vs 單體評分呼叫）；
  * timing.totalMs 的蜂群值含對談生成與 mock 模式的節奏延遲，和單體不是同一個範圍。
  * 評分 provider 可能不同（hybrid：蜂群評分走 Jev 決策層、單體走 LLM）→ 見 scoringSource。
+ * 評分輸入對齊：蜂群 r:A 走決策層（Jev／LLM 決策／規則）時 state 只有雙方各 6 個欄位＋逐字稿前 6000 字
+ * （mock.reportState），單體 LLM 也只給同樣 6 個欄位（realMatchReport 本身只取逐字稿前 6000 字）→ solo.extra.input。
+ * 輸入相同、評分者仍不同，分差不能解讀為蜂群的品質優勢（/compare cmp.agreementNote 明講）。
  */
 
 export interface SideMetrics {
@@ -67,6 +70,37 @@ export interface CompareResult {
 }
 
 const FIELDS_EXPECTED = 10; // 5 維度 + verdict + reasons + redFlags + sharedTopics + summary
+
+/**
+ * 決策層評分看得到的 6 個欄位（與 mock.reportState 的 me/them 相同），其他欄位清空、不帶 GitHub 驗證。
+ * 單體 baseline 在蜂群 r:A 走決策層時用它，兩邊評分的輸入才相同。
+ */
+export function decisionFieldsOnly(p: HackathonProfile): HackathonProfile {
+  return {
+    nickname: p.nickname,
+    role: p.role,
+    skills: p.skills,
+    goal: p.goal,
+    availability: p.availability,
+    workingStyle: p.workingStyle,
+    timezone: "",
+    vibe: "",
+    dealbreakers: [],
+    bio: "",
+  };
+}
+
+/**
+ * 蜂群 r:A 是否由決策層評分（輸入＝reportState 的 6 個欄位）：
+ * real 模式的 realMatchReport 記 provider=real（完整公開檔案）；jev／llm（決策層的 LLM 退路）／mock（規則）都是決策層。
+ * 沒有軌跡的舊 run 依目前模式判斷。
+ */
+export function swarmScoredByDecisionLayer(
+  provider: string | null | undefined,
+  mode: typeof LLM_MODE = LLM_MODE,
+): boolean {
+  return provider ? provider !== "real" : mode !== "real";
+}
 
 function fieldsFilled(r: MatchReport): number {
   const dims = Object.values(r.dimensions ?? {}).filter(
@@ -156,7 +190,9 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
       scoringComparable: rA ? rA.retries + 1 : 0,
     },
     reusesSwarmTranscript: false,
-    scoringSource: rA?.provider ?? report.decisionSource ?? "unknown",
+    // real 模式的 r:A 就是 LLM（realMatchReport，與單體同一個評分者）→ 記成 llm，才不會誤判成「provider 不同」
+    scoringSource:
+      rA?.provider === "real" ? "llm" : (rA?.provider ?? report.decisionSource ?? "unknown"),
     tokens: {
       input: sumOrNull(parts.map((p) => p.inputTokens)),
       output: sumOrNull(parts.map((p) => outputTokensOf(p.note))),
@@ -181,10 +217,15 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
   };
 }
 
-/** 舊版快取的單體結果沒有分段欄位：補上（舊版同樣是沿用蜂群逐字稿、單次評分） */
+/**
+ * 舊版快取的單體結果沒有分段欄位：補上（舊版同樣是沿用蜂群逐字稿、單次評分）。
+ * 舊版沒有 extra.input：LLM 單體當時看的是完整公開檔案（mock 單體一直只用 6 個欄位）。
+ */
 function normalizeSolo(m: SideMetrics): SideMetrics {
+  const legacyInput = m.source?.startsWith("mock") ? "decision-fields" : "public-profile";
   return {
     ...m,
+    extra: { ...m.extra, input: m.extra?.input ?? legacyInput },
     timing: m.timing ?? { totalMs: m.latencyMs, scoringMs: m.latencyMs, transcriptMs: 0 },
     callBreakdown: m.callBreakdown ?? {
       transcript: 0,
@@ -235,13 +276,26 @@ export async function runSoloBaseline(
     const qa = qaTextFromEvents(run.events);
     // 跟著引擎模式走：LLM_PROVIDER=mock（或沒有 LLM key）就不外送
     const useLlm = LLM_MODE !== "mock";
+    // 同輸入：蜂群 r:A 走決策層時只看雙方各 6 個欄位＋逐字稿前 6000 字，單體 LLM 也只給這 6 個欄位
+    // （realMatchReport 只取逐字稿前 6000 字）；mock 的 mockMatchReport 本來就只用這 6 個欄位
+    const rAPart = await prisma.swarmPart.findUnique({
+      where: { id: `r:${runId}:A` },
+      select: { provider: true },
+    });
+    const alignInput = useLlm && swarmScoredByDecisionLayer(rAPart?.provider);
     const t0 = Date.now();
     let report: MatchReport;
     let meter: CallMeter;
     try {
       ({ value: report, meter } = await withMeter(() =>
         useLlm
-          ? real.realMatchReport(self, other, qa, `${runId}:solo`, runId)
+          ? real.realMatchReport(
+              alignInput ? decisionFieldsOnly(self) : self,
+              alignInput ? decisionFieldsOnly(other) : other,
+              qa,
+              `${runId}:solo`,
+              runId,
+            )
           : mock.mockMatchReport(self, other, qa, `${runId}:solo`),
       ));
     } catch (e) {
@@ -272,7 +326,11 @@ export async function runSoloBaseline(
         input: meter.hasUsage ? meter.inputTokens : null,
         output: meter.hasUsage ? meter.outputTokens : null,
       },
-      extra: { model: useLlm ? (process.env.LLM_MODEL ?? null) : null },
+      extra: {
+        model: useLlm ? (process.env.LLM_MODEL ?? null) : null,
+        // decision-fields：與蜂群決策層同樣的 6 個欄位＋逐字稿前 6000 字；public-profile：完整公開檔案
+        input: alignInput || !useLlm ? "decision-fields" : "public-profile",
+      },
     };
     await prisma.soloBaseline.upsert({
       where: { runId },

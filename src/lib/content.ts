@@ -7,17 +7,9 @@ export interface ContentData {
   interview: string[];
   closing: string; // {answer}
   echo: string; // {answer}
-  jobFallback: string;
   vibeTemplate: string; // {topic}
   bioTemplate: string; // {vibe}
-  defaultInterests: string[];
-  defaultValues: string[];
   defaultDealbreakers: string[];
-  lookingFor: { slow: string; fast: string; orDefault: string };
-  lifestyle: { tired: string; active: string };
-  comms: { text: string; meet: string };
-  interests: [string, string][]; // [regex, label]
-  jobs: [string, string][];
   // [regex, canonical role]。zh.roles 是「跨語系總表」：roleKey（llm/mock.ts）與 roleKeyOf 都用它比對任意語系的角色字串
   roles: [string, string][];
   roleLabels: Record<string, string>; // canonical -> display
@@ -115,34 +107,9 @@ const zh: ContentData = {
   ],
   closing: "「{answer}」——收到，你的選手檔案我正在整理，晚點到「我的檔案」確認我要拿去用的版本。",
   echo: "「{answer}」——筆記。",
-  jobFallback: "上班族",
   vibeTemplate: "{role}，主武裝 {topic}，{goal}型選手",
   bioTemplate: "{vibe}。這次想找互補的隊友一起把 demo 做完整。",
-  defaultInterests: ["自學中"],
-  defaultValues: ["真誠"],
   defaultDealbreakers: ["不寫文件", "不測試"],
-  lookingFor: { slow: "筆友式慢溫，先舒服再說", fast: "看感覺，聊得來可以直接約", orDefault: "先當朋友開始，以認真交往為前提" },
-  lifestyle: { tired: "工作很吃能量，假日偏歸巢型充電", active: "作息規律，假日喜歡出門走走" },
-  comms: { text: "文字派，回訊穩定，喜歡分享生活小片段", meet: "喜歡直接約見面聊，線上會認真回但偏慢" },
-  interests: [
-    ["貓|猫", "貓"], ["狗", "狗"], ["咖啡", "咖啡"], ["露營|露营", "露營"],
-    ["爬山|登山|健行", "爬山"], ["追劇|追剧", "追劇"], ["遊戲|游戏", "遊戲"],
-    ["健身|重訓|重训", "健身"], ["跑步|路跑", "跑步"], ["看展|展覽|展览", "看展"],
-    ["插畫|插画|畫畫|画画", "插畫"], ["吉他", "吉他"], ["桌遊|桌游", "桌遊"],
-    ["旅行|旅遊|旅游", "旅行"], ["溫泉|温泉", "溫泉"], ["甜點|甜点", "甜點"],
-    ["料理|做菜|烹飪|烹饪", "料理"], ["閱讀|阅读|看書|看书", "閱讀"], ["電影|电影", "電影"],
-    ["攝影|摄影", "攝影"], ["投資|投资|理財|理财", "投資理財"], ["冥想|瑜伽|瑜珈", "冥想"],
-    ["爵士", "爵士樂"], ["看海|海邊|海边", "看海"], ["羽球|籃球|篮球|運動|运动", "運動"],
-  ],
-  jobs: [
-    ["工程師|工程师|寫程式|写程式|coding|後端|后端|前端", "工程師"],
-    ["設計|设计|UI|UX|美術|美术", "設計師"],
-    ["老師|老师|教學|教学|教育", "教職"],
-    ["護理|护理|醫護|医护|醫師|医师", "醫護"],
-    ["行銷|行销|企劃|企划|廣告|广告", "行銷企劃"],
-    ["產品經理|产品经理|PM", "產品經理"],
-    ["學生|学生|上課|上课|研究所", "學生"],
-  ],
   // 跨語系總表（繁中／簡中／英文／日文都要對得上；順序＝優先序）。
   // 短英文字（pm/api/ml/ai）加字邊界，避免 npm、rapid、html、email 之類誤判。
   roles: [
@@ -290,36 +257,9 @@ const en: ContentData = {
   ],
   closing: "“{answer}” — noted. I'm compiling your unit file; check “My Profile” later to review it.",
   echo: "“{answer}” — noted. ",
-  jobFallback: "Professional",
   vibeTemplate: "{role}, main weapon {topic}, {goal} type",
   bioTemplate: "{vibe}. Looking for complementary teammates to finish a solid demo.",
-  defaultInterests: ["self-learner"],
-  defaultValues: ["honesty"],
   defaultDealbreakers: ["No docs", "No tests"],
-  lookingFor: { slow: "Slow-burn, comfort first", fast: "Vibes-based, meet fast", orDefault: "Friends first, serious intent" },
-  lifestyle: { tired: "Work drains me; home-body on weekends", active: "Regular schedule; out and about on weekends" },
-  comms: { text: "Text-first, steady replies", meet: "Prefers meeting in person; slow online" },
-  interests: [
-    ["cat|猫|貓", "Cats"], ["dog", "Dogs"], ["coffee|咖啡", "Coffee"],
-    ["camp|camping|露營", "Camping"], ["hik|hiking|登山", "Hiking"],
-    ["game|gaming|遊戲", "Gaming"], ["gym|fitness|健身", "Fitness"],
-    ["run|jog|跑步", "Running"], ["exhibit|museum|看展", "Exhibits"],
-    ["draw|illustration|插畫", "Illustration"], ["guitar|吉他", "Guitar"],
-    ["board.?game|桌遊", "Board games"], ["travel|旅行", "Travel"],
-    ["photo|攝影", "Photography"], ["movie|film|電影", "Movies"],
-    ["read|book|閱讀", "Reading"], ["invest|finance|投資", "Investing"],
-    ["meditat|yoga|冥想", "Meditation"], ["jazz|爵士", "Jazz"],
-    ["beach|sea|看海", "Beach"],
-  ],
-  jobs: [
-    ["engineer|coding|developer|後端|前端", "Engineer"],
-    ["design|ui|ux", "Designer"],
-    ["teacher|education|老師", "Education"],
-    ["nurse|doctor|medical|醫護", "Medical"],
-    ["marketing|行銷", "Marketing"],
-    ["product manager|pm|產品經理", "Product manager"],
-    ["student|學生", "Student"],
-  ],
   roles: [
     ["full.?stack|全端", "fullstack"],
     ["front.?end|react|vue|前端", "frontend"],
@@ -465,36 +405,9 @@ const ja: ContentData = {
   ],
   closing: "「{answer}」——了解。選手ファイルを編集中です。「マイプロフィール」で後ほど確認してください。",
   echo: "「{answer}」——メモしました。",
-  jobFallback: "会社員",
   vibeTemplate: "{role}、主力は{topic}、{goal}タイプ",
   bioTemplate: "{vibe}。補完できる仲間と一緒にdemoを完成させたい。",
-  defaultInterests: ["独学中"],
-  defaultValues: ["誠実"],
   defaultDealbreakers: ["ドキュメントなし", "テストなし"],
-  lookingFor: { slow: "ゆっくり距離を縮めたい", fast: "直感優先、会ってみたい", orDefault: "友達から、真剣交際前提" },
-  lifestyle: { tired: "仕事で消耗、休日は家で充電", active: "規則正しい、休日は外出派" },
-  comms: { text: "テキスト派、返信は安定", meet: "直接会うのが好き、オンラインはゆっくり" },
-  interests: [
-    ["猫|ねこ", "猫"], ["犬|いぬ", "犬"], ["コーヒー|カフェ", "コーヒー"],
-    ["キャンプ|camp", "キャンプ"], ["登山|ハイキング", "登山"],
-    ["ゲーム|game", "ゲーム"], ["筋トレ|ジム|gym", "筋トレ"],
-    ["ランニング|run|マラソン", "ランニング"], ["展覧会|美術館|exhibit", "展覧会"],
-    ["イラスト|描く|draw", "イラスト"], ["ギター|guitar", "ギター"],
-    ["ボードゲーム|board", "ボードゲーム"], ["旅行|travel", "旅行"],
-    ["写真|photo", "写真"], ["映画|movie|film", "映画"],
-    ["読書|本|read", "読書"], ["投資|finance", "投資"],
-    ["瞑想|ヨガ|meditation", "瞑想"], ["ジャズ|jazz", "ジャズ"],
-    ["海|beach", "海"],
-  ],
-  jobs: [
-    ["エンジニア|programming|開発|後端|前端", "エンジニア"],
-    ["デザイン|design|ui|ux", "デザイナー"],
-    ["教師|教育|teacher", "教育"],
-    ["看護|医療|nurse|doctor", "医療"],
-    ["マーケ|広告|marketing", "マーケティング"],
-    ["pm|プロダクト|product", "プロダクト"],
-    ["学生|student", "学生"],
-  ],
   roles: [
     ["フルスタック|full.?stack|全端", "fullstack"],
     ["フロント|front.?end|react|vue|前端", "frontend"],
@@ -640,163 +553,11 @@ const cn: ContentData = {
   ],
   "closing": "「{answer}」——收到，你的选手文件我正在整理，晚点到「我的文件」确认我要拿去用的版本。",
   "echo": "「{answer}」——笔记。",
-  "jobFallback": "上班族",
   "vibeTemplate": "{role}，主武装 {topic}，{goal}型选手",
   "bioTemplate": "{vibe}。这次想找互补的队友一起把 demo 做完整。",
-  "defaultInterests": [
-    "自学中"
-  ],
-  "defaultValues": [
-    "真诚"
-  ],
   "defaultDealbreakers": [
     "不写文件",
     "不测试"
-  ],
-  "lookingFor": {
-    "slow": "笔友式慢温，先舒服再说",
-    "fast": "看感觉，聊得来可以直接约",
-    "orDefault": "先当朋友开始，以认真交往为前提"
-  },
-  "lifestyle": {
-    "tired": "工作很吃能量，假日偏归巢型充电",
-    "active": "作息规律，假日喜欢出门走走"
-  },
-  "comms": {
-    "text": "文字派，回讯稳定，喜欢分享生活小片段",
-    "meet": "喜欢直接约见面聊，线上会认真回但偏慢"
-  },
-  "interests": [
-    [
-      "猫|猫",
-      "猫"
-    ],
-    [
-      "狗",
-      "狗"
-    ],
-    [
-      "咖啡",
-      "咖啡"
-    ],
-    [
-      "露营|露营",
-      "露营"
-    ],
-    [
-      "爬山|登山|健行",
-      "爬山"
-    ],
-    [
-      "追剧|追剧",
-      "追剧"
-    ],
-    [
-      "游戏|游戏",
-      "游戏"
-    ],
-    [
-      "健身|重训|重训",
-      "健身"
-    ],
-    [
-      "跑步|路跑",
-      "跑步"
-    ],
-    [
-      "看展|展览|展览",
-      "看展"
-    ],
-    [
-      "插画|插画|画画|画画",
-      "插画"
-    ],
-    [
-      "吉他",
-      "吉他"
-    ],
-    [
-      "桌游|桌游",
-      "桌游"
-    ],
-    [
-      "旅行|旅游|旅游",
-      "旅行"
-    ],
-    [
-      "温泉|温泉",
-      "温泉"
-    ],
-    [
-      "甜点|甜点",
-      "甜点"
-    ],
-    [
-      "料理|做菜|烹饪|烹饪",
-      "料理"
-    ],
-    [
-      "阅读|阅读|看书|看书",
-      "阅读"
-    ],
-    [
-      "电影|电影",
-      "电影"
-    ],
-    [
-      "摄影|摄影",
-      "摄影"
-    ],
-    [
-      "投资|投资|理财|理财",
-      "投资理财"
-    ],
-    [
-      "冥想|瑜伽|瑜珈",
-      "冥想"
-    ],
-    [
-      "爵士",
-      "爵士乐"
-    ],
-    [
-      "看海|海边|海边",
-      "看海"
-    ],
-    [
-      "羽球|篮球|篮球|运动|运动",
-      "运动"
-    ]
-  ],
-  "jobs": [
-    [
-      "工程师|工程师|写程序|写程序|coding|后端|后端|前端",
-      "工程师"
-    ],
-    [
-      "设计|设计|UI|UX|美术|美术",
-      "设计师"
-    ],
-    [
-      "老师|老师|教学|教学|教育",
-      "教职"
-    ],
-    [
-      "护理|护理|医护|医护|医师|医师",
-      "医护"
-    ],
-    [
-      "行销|行销|企划|企划|广告|广告",
-      "行销企划"
-    ],
-    [
-      "产品经理|产品经理|PM",
-      "产品经理"
-    ],
-    [
-      "学生|学生|上课|上课|研究所",
-      "学生"
-    ]
   ],
   "roles": [
     [

@@ -101,25 +101,27 @@ export function rankCandidates(list: CandidateInfo[], limit = MAX_CANDIDATES): s
     .map((c) => c.id);
 }
 
-/** 找出配對候選：同一場活動、有 ready 檔案、沒有進行中互盤、不是已成隊隊友 */
+/**
+ * 找出配對候選：同一場活動、有 ready 檔案、沒有進行中互盤、不是已成隊隊友。
+ * 沒有活動（eventId 為 null）→ 一律回空陣列，不做全域查詢（不跨活動配對）。
+ */
 export async function pickCandidates(
   userId: string,
   eventId: string | null,
 ): Promise<string[]> {
+  if (!eventId) return [];
   await reapStaleRuns(userId);
-  const memberIds = eventId
-    ? (
-        await prisma.eventMember.findMany({
-          where: { eventId },
-          select: { userId: true },
-        })
-      ).map((m) => m.userId)
-    : undefined;
+  const memberIds = (
+    await prisma.eventMember.findMany({
+      where: { eventId },
+      select: { userId: true },
+    })
+  ).map((m) => m.userId);
 
   const [users, runs, teams] = await Promise.all([
     prisma.user.findMany({
       where: {
-        id: { not: userId, ...(memberIds ? { in: memberIds } : {}) },
+        id: { not: userId, in: memberIds },
         profile: { status: "ready" },
       },
       select: { id: true, isBot: true },
@@ -181,11 +183,17 @@ async function withUserLock<T>(userId: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
-/** 觸發一輪互盤：建立 run 紀錄後背景執行，回傳 run ids */
+/**
+ * 觸發一輪互盤：建立 run 紀錄後背景執行，回傳 run ids。
+ * - 沒有加入任何活動 → throw NO_EVENT（路由回 409 no_event）；候選只在同一場活動裡找
+ * - opts.defer：每場 runPair 的 promise（已接 .catch、不會 reject）交給呼叫端追蹤；
+ *   API 路由用 next/server after() 等它們跑完（平台 waitUntil、自架 graceful shutdown 都會等）。
+ *   沒給 defer（腳本、probe）就照舊在背景跑。行程被殺掉的殘留 run 仍由 reapStaleRuns 收尾。
+ */
 export async function startMatching(
   userId: string,
   locale: Locale = "zh",
-  opts?: { faultInject?: boolean },
+  opts?: { faultInject?: boolean; defer?: (pending: Promise<void>) => void },
 ): Promise<string[]> {
   return withUserLock(userId, async () => {
     const me = await loadProfile(userId);
@@ -196,6 +204,7 @@ export async function startMatching(
       orderBy: { joinedAt: "desc" },
     });
     const eventId = membership?.eventId ?? null;
+    if (!eventId) throw new Error("NO_EVENT");
 
     const candidateIds = await pickCandidates(userId, eventId);
     if (candidateIds.length === 0) return [];
@@ -207,10 +216,11 @@ export async function startMatching(
       });
       runs.push(run.id);
       publish(`user:${userId}`, { type: "run_started", runId: run.id });
-      // 背景執行（單行程自架）；runPair 自己保證任何例外都把 run 收尾成 failed
-      void runPair(run.id, me, cid, locale, opts).catch((e) =>
-        console.error("runPair escaped", e),
+      // runPair 自己保證任何例外都把 run 收尾成 failed；.catch 只接住收尾本身也失敗的情況
+      const pending = runPair(run.id, me, cid, locale, { faultInject: opts?.faultInject }).catch(
+        (e) => console.error("runPair escaped", e),
       );
+      opts?.defer?.(pending);
     }
     return runs;
   });

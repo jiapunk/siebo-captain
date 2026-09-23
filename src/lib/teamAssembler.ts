@@ -98,6 +98,30 @@ export function latestUniqueHypotheses<P extends { id: string; updatedAt: Date }
   return [...best.values()];
 }
 
+/** 同一輪組裝的時間窗：與該 owner 最新一筆 team_eval part 的 updatedAt 相差超過這個時間 → 視為舊輪次 */
+export const HYPOTHESIS_ROUND_WINDOW_MS = 10 * 60_000;
+
+/**
+ * 最新一輪的假設（HYPOTHESES 計數與網絡模擬用）：
+ * 每位 owner 只留與「他最新一筆 team_eval part」updatedAt 相差 10 分鐘內的 part，再用 latestUniqueHypotheses 去重。
+ * 新資料每輪組裝前會把上一輪封存到 h:<owner>:prev，這個過濾不會動到它；
+ * 修正前的舊資料（demo DB、快照）沒有封存，h:<owner> 底下混著好幾輪，靠時間窗切出最新一輪（≤15 組）。
+ */
+export function latestRoundHypotheses<P extends { id: string; updatedAt: Date }>(parts: P[]): P[] {
+  const ownerOf = (p: P) => p.id.split(":")[1] ?? "";
+  const newest = new Map<string, number>();
+  for (const p of parts) {
+    const t = p.updatedAt.getTime();
+    const o = ownerOf(p);
+    if (!newest.has(o) || newest.get(o)! < t) newest.set(o, t);
+  }
+  return latestUniqueHypotheses(
+    parts.filter(
+      (p) => newest.get(ownerOf(p))! - p.updatedAt.getTime() <= HYPOTHESIS_ROUND_WINDOW_MS,
+    ),
+  );
+}
+
 /** 硬約束：隊伍評估分 ≥ 60、沒有角色缺口、沒有死鎖 */
 export const TEAM_SCORE_FLOOR = 60;
 export function passesHardConstraints(evalScore: number, answers: DecideAnswer[]): boolean {

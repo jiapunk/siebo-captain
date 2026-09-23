@@ -357,3 +357,80 @@ test("DELETE /api/me：刪除後 /api/me 為 null、無法再登入；示範身�
   const nobody = await newCtx(baseURL);
   expect((await nobody.delete("/api/me")).status()).toBe(401);
 });
+
+test("DELETE /api/me：訪談原文在編譯後清空；刪除後對方的 /api/agent/runs 不再列出那場 run", async ({
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  type RunRow = { id: string; status: string };
+  const runsOf = async (ctx: APIRequestContext) =>
+    ((await (await ctx.get("/api/agent/runs")).json()) as { runs: RunRow[] }).runs;
+
+  // 示範身分：沒有 email（不受驗證閘門限制），建立時自動加入最近的活動
+  const ctx = await newCtx(baseURL);
+  const made = await ctx.post("/api/users", { data: { name: `Del-${uniq()}`.slice(0, 12), emoji: "🧪" } });
+  expect(made.status(), await made.text()).toBe(200);
+  const me = ((await made.json()) as { id: string }).id;
+  expect((await ctx.post("/api/session", { data: { userId: me } })).status()).toBe(200);
+
+  // 六題訪談（第一輪帶同意）→ 編譯
+  const answers = [
+    "我寫 TypeScript 跟 React",
+    "想拿獎，也學新東西",
+    "全程 48 小時都在",
+    "最怕報名後消失的人；我 cover 前端很快",
+    "先畫架構再動手",
+    "github.com/delete-demo",
+  ];
+  for (const [i, content] of answers.entries()) {
+    const r = await ctx.post("/api/onboarding/message", {
+      data: i === 0 ? { content, consent: true } : { content },
+    });
+    expect(r.status(), `第 ${i + 1} 題：${await r.text()}`).toBe(200);
+  }
+  const compiled = await ctx.post("/api/onboarding/compile");
+  expect(compiled.status(), await compiled.text()).toBe(200);
+
+  // 編譯完成（ready）就清空訪談原文，只留同意時間
+  const { profile } = (await (await ctx.get("/api/profile")).json()) as {
+    profile: { status: string; interview: { consentAt?: unknown; turns?: unknown[] } };
+  };
+  expect(profile.status).toBe("ready");
+  expect(profile.interview.turns).toEqual([]);
+  expect(typeof profile.interview.consentAt).toBe("number");
+  expect(JSON.stringify(profile.interview)).not.toContain("TypeScript");
+
+  // 隊長出發：等這一輪互盤全部跑完（不留背景工作寫到被刪的帳號）
+  const started = await ctx.post("/api/matching/run");
+  expect(started.status(), await started.text()).toBe(200);
+  const runIds = ((await started.json()) as { runIds: string[] }).runIds;
+  expect(runIds.length).toBeGreaterThan(0);
+  await expect
+    .poll(
+      async () => {
+        const runs = await runsOf(ctx);
+        return runIds.every((id) => runs.some((r) => r.id === id && r.status !== "running"));
+      },
+      { timeout: 90_000, intervals: [500, 1000] },
+    )
+    .toBe(true);
+
+  // 找出對方（候選都是同場活動的示範名冊身分）：刪除前，對方看得到這場 run
+  const peerCtx = await newCtx(baseURL);
+  const peers: string[] = [];
+  for (const u of await demoRoster(peerCtx)) {
+    if (u.id === me) continue;
+    expect((await peerCtx.post("/api/session", { data: { userId: u.id } })).status()).toBe(200);
+    if ((await runsOf(peerCtx)).some((r) => runIds.includes(r.id))) peers.push(String(u.id));
+  }
+  expect(peers.length, "至少一位對方看得到這輪互盤").toBeGreaterThan(0);
+
+  expect((await ctx.delete("/api/me")).status()).toBe(200);
+
+  // 刪除後：對方的 run 清單不再有這幾場
+  for (const peer of peers) {
+    expect((await peerCtx.post("/api/session", { data: { userId: peer } })).status()).toBe(200);
+    const leftover = (await runsOf(peerCtx)).filter((r) => runIds.includes(r.id));
+    expect(leftover, `peer ${peer}`).toEqual([]);
+  }
+});

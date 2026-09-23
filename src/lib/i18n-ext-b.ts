@@ -90,6 +90,9 @@ export const EXT_B: Record<Locale, Record<string, string>> = {
     "b.onb.privacyMock": "目前是展示模式：回答由內建腳本處理，不會送到外部 AI。",
     "b.onb.agree": "我已了解，並同意以上處理方式。",
     "b.onb.start": "開始訪談",
+    "b.onb.privacyRetention":
+      "訪談原文只用來編譯你的選手檔案，編譯完成就刪除（只留下你同意的時間）；活動結束 30 天後，所有參賽者帳號與相關資料會一併清除。",
+    "b.onb.consentRequired": "請先閱讀上面的說明並勾選同意，才能開始訪談。",
 
     // ---- 持續聯絡（邀請／接受） ----
     "b.conn.missing": "找不到這個聯絡",
@@ -222,6 +225,9 @@ export const EXT_B: Record<Locale, Record<string, string>> = {
     "b.onb.privacyMock": "目前是展示模式：回答由内置脚本处理，不会发送到外部 AI。",
     "b.onb.agree": "我已了解，并同意以上处理方式。",
     "b.onb.start": "开始访谈",
+    "b.onb.privacyRetention":
+      "访谈原文只用来编译你的选手文件，编译完成就删除（只留下你同意的时间）；活动结束 30 天后，所有参赛者账号与相关数据会一并清除。",
+    "b.onb.consentRequired": "请先阅读上面的说明并勾选同意，才能开始访谈。",
 
     "b.conn.missing": "找不到这个联系",
     "b.conn.missingDesc": "它可能已被删除，或你不是这段联系的当事人。",
@@ -352,6 +358,9 @@ export const EXT_B: Record<Locale, Record<string, string>> = {
       "Sandbox mode right now: answers are handled by a built-in script and are not sent to any external AI.",
     "b.onb.agree": "I understand and agree to this processing.",
     "b.onb.start": "Start interview",
+    "b.onb.privacyRetention":
+      "Your interview transcript is only used to compile your player profile and is deleted once that's done (we keep only the time you agreed). 30 days after the event ends, all participant accounts and their data are deleted.",
+    "b.onb.consentRequired": "Please read the notice above and tick the box to agree before starting the interview.",
 
     "b.conn.missing": "Contact not found",
     "b.conn.missingDesc": "It may have been removed, or you're not part of it.",
@@ -484,6 +493,9 @@ export const EXT_B: Record<Locale, Record<string, string>> = {
       "現在はデモモードです：回答は内蔵スクリプトで処理され、外部AIには送信されません。",
     "b.onb.agree": "内容を理解し、上記の処理に同意します。",
     "b.onb.start": "インタビュー開始",
+    "b.onb.privacyRetention":
+      "インタビューの原文は選手プロフィールの生成にだけ使い、生成が終わると削除します（同意した日時のみ残ります）。イベント終了から30日後に、すべての参加者アカウントと関連データを削除します。",
+    "b.onb.consentRequired": "上の説明を読み、同意にチェックしてからインタビューを始めてください。",
 
     "b.conn.missing": "連絡先が見つかりません",
     "b.conn.missingDesc": "削除されたか、あなたが当事者ではない可能性があります。",

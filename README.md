@@ -33,7 +33,7 @@
   - **跨站防護**：`src/proxy.ts` 擋掉 Origin 與 Host 不符的跨來源 POST／PUT／DELETE（403 `bad_origin`）
   - **刪除帳號**：`DELETE /api/me` 刪除帳號與個人資料並清掉 cookie（種子角色不能刪）
   - **示範身分切換**：只能切到**沒有 email、也沒有密碼的示範身分**（種子角色與 demo 建立的角色）；真帳號不能被切換冒用，`/api/users` 也只列示範身分；登入真帳號時真 session 永遠優先（要切換請先登出）；`DEMO_SWITCH=off` 可整個關閉
-- **活動（Event）code 加入**：配對範圍鎖定同一場活動；demo 內建「EvoTavern」（code `EVOTAVERN`）
+- **活動（Event）code 加入**：配對範圍鎖定同一場活動；demo 內建「EvoTavern」（code `EVOTAVERN`）；沒加入任何活動時「隊長出發」回 409 `no_event`（候選只在同一場活動裡找，不做全域配對），/agent 會顯示加入活動的輸入框
 
 ## 🚀 快速開始
 
@@ -131,7 +131,7 @@ EVENT_ENDS_AT=2026-09-24T23:59:59+08:00
 **單體 vs 蜂群對照（/compare）**
 - 蜂群＝該場既有的 6 個 Part（4 個對談生成＋2 個評分）；單體＝**沿用蜂群已生成的同一份逐字稿**，用一次呼叫直接產出 A 方報告
 - **公平可比的是「評分步驟」**：`timing.scoringMs`（蜂群 `r:A` Part 耗時 vs 單體那一次呼叫）與 `callBreakdown.scoringComparable`；蜂群的全流程牆鐘含對談生成（mock 模式另含每步 650ms 的轉播節奏延遲），和單體不是同一個範圍，API 分欄列出
-- 評分 provider 可能不同：hybrid 下蜂群評分走 Jev 決策層、單體走 LLM（`scoringSource` 如實標示）；mock 模式兩邊都是本機規則、不外送
+- 評分者不同、輸入對齊：hybrid 下蜂群評分走 Jev 決策層（失敗退 LLM 決策→本機規則），決策層只看雙方各 6 個檔案欄位（暱稱、角色、技能、目標、可投入時間、協作風格）加逐字稿前 6000 字；蜂群 `r:A` 走決策層時，單體 LLM 也只收到同樣的 6 個欄位與前 6000 字（`solo.extra.input = "decision-fields"`；更早快取的單體看的是完整公開檔案，標 `"public-profile"`，重新執行即可對齊）。輸入相同，但評分者與量尺不同，分差不能解讀為蜂群的品質優勢，/compare 頁面明講。real 模式兩邊是同一個 LLM、完整公開檔案；mock 模式兩邊都是本機規則、不外送（`scoringSource` 如實標示）
 - 對照固定以 A 方（發起者）視角；B 方打開時看到的是 A 方隊長的評估（回應 `viewerSide`）
 - 每場只有一次單體取樣（LLM 有隨機性，重跑會變），不能當統計結論；只有該場當事人能看、能重跑（每場每分鐘 1 次）
 
@@ -142,7 +142,7 @@ EVENT_ENDS_AT=2026-09-24T23:59:59+08:00
 **合作網絡圖（`/api/network`）**
 - 節點＝同一場活動的成員（角色依分享權限投影）；邊＝同活動已成立隊伍的兩兩成員＋兩端都在本活動的持續聯絡（connected）；沒有加入活動時回空圖
 - 指標：**聚類係數**（標準平均聚類，同 networkx `average_clustering`：degree < 2 的節點記 0 並計入平均）、邊數／平均度、樞紐節點
-- **雙信號模擬**：取「你最新一輪組隊」的 `team_eval` 假設，套用與實際組隊相同的硬約束與不重疊貪婪，分別用 social 與 competence 信號各選一次；每隊＝你＋兩位隊友的三角形，加上既有的邊建圖，比較兩種信號下的聚類係數與跨角色群連結數（不寫 DB）
+- **雙信號模擬**：取「你最新一輪組隊」的 `team_eval` 假設（舊資料沒有封存上一輪時，只取與你最新一筆相差 10 分鐘內的假設，與隊伍頁的 `HYPOTHESES` 同一套計數），套用與實際組隊相同的硬約束與不重疊貪婪，分別用 social 與 competence 信號各選一次；每隊＝你＋兩位隊友的三角形，加上既有的邊建圖，比較兩種信號下的聚類係數與跨角色群連結數（不寫 DB）
 - 限制：只模擬單一使用者的最新一輪，樣本很小；EvoX 實驗二的 0.53 → 0.28 是論文數字，這裡只是把同一個比較方式搬進產品畫面，不是重現該實驗
 
 ## 🧬 P3：EvoMap GEP-A2A 對接（opt-in）
@@ -192,7 +192,7 @@ LLM_TIMEOUT_MS=45000
 JEV_API_KEY=...                              # hybrid 評分用（沒有就退到 LLM 決策，再退規則）
 ```
 
-- 遵循 OpenCode Go 規範：專屬 `User-Agent` ＋ `x-opencode-session`（訪談與檔案編譯＝userId、互盤＝runId、破冰卡＝runId、團隊聊天＝teamId、私訊＝connectionId；只保留 ASCII；供應商端可藉此關聯同一使用者的請求）
+- 遵循 OpenCode Go 規範：專屬 `User-Agent` ＋ `x-opencode-session`（訪談與檔案編譯＝每份檔案的隨機 id（存在 interview JSON 的 sid，不是 userId）、互盤＝runId、破冰卡＝runId、團隊聊天＝teamId、私訊＝connectionId；只保留 ASCII；供應商端可藉 runId／teamId／connectionId 關聯同一場對談的請求）
 - 呼叫量：一場互盤 hybrid 約 4 次 LLM ＋ 2 次決策請求、real 約 6 次 LLM（不含重試）；「隊長出發」一次最多 5 場，並行執行；真 LLM 模式一次約數分鐘（背景執行＋ live 轉播）
 
 ## 🔒 隱私與資料流
@@ -206,9 +206,9 @@ JEV_API_KEY=...                              # hybrid 評分用（沒有就退�
 | GitHub API | 按「GitHub 比對」且 `GITHUB_VERIFY` 不是 mock | 你輸入的 GitHub 使用者名稱（可選 `GITHUB_TOKEN`；結果快取 10 分鐘） |
 | EvoMap（`EVOMAP_BASE`） | `EVOMAP_ENABLED=1`，由 CLI 或管理者帳號觸發 | 組隊彙總統計（隊伍數、平均分、provider、Part 完成數），不含使用者 id 或姓名；心跳只送節點憑證 |
 
-- **訪談前告知**：`/onboarding` 開始新訪談前先顯示一張告知卡：回答會送到第三方 AI 服務處理、伺服器可能在使用者所在地區以外、分享權限擋不住 AI 服務處理、可隨時刪除帳號；要勾選同意才開始（mock 模式另註明回答不會外送）。已經有回答的訪談不再顯示。同意只在前端把關，伺服器沒有記錄或檢查（見「已知限制」）
+- **訪談前告知**：`/onboarding` 開始新訪談前先顯示一張告知卡：回答會送到第三方 AI 服務處理、伺服器可能在使用者所在地區以外、分享權限擋不住 AI 服務處理、可隨時刪除帳號、保存期限（訪談原文編譯完成即刪除；活動結束 30 天後清除參賽者帳號與資料）；要勾選同意才開始（mock 模式另註明回答不會外送）。已經有回答的訪談不再顯示。伺服器也會檢查：新訪談第一則回答要帶 `consent: true`，否則 `/api/onboarding/message` 回 400 `consent_required`；同意時間 `consentAt` 存進 interview JSON（沒有改 schema）。同意機制上線前就已開始的訪談不再要求同意
 - **分享權限**：關閉的欄位不會給對方參賽者看到，也不會放進互盤、組隊、網絡圖送出的檔案；但訪談原文與你自己的破冰卡生成仍會送到 LLM 供應商
-- **資料保存**：訪談逐字稿與檔案存在本機 SQLite；`DELETE /api/me` 會刪除帳號與個人資料。第三方供應商端的保存政策不在本服務控制範圍
+- **資料保存**：訪談逐字稿與檔案存在本機 SQLite；檔案編譯完成（`status=ready`）時會清空訪談原文，只留 `consentAt` 與清除時間 `clearedAt`（編譯出的選手檔案保留）；`DELETE /api/me` 會刪除帳號與所有衍生資料。**保存期限：活動結束（`EVENT_ENDS_AT`）30 天後，清除所有非種子帳號（真帳號與 demo 建立的示範身分）及其資料**；目前沒有自動排程，由營運者手動執行。此修正前已編譯的檔案仍保留訪談原文，需由營運者一次性清空。第三方供應商端的保存政策不在本服務控制範圍
 
 ## 🛡️ 節流與成本保護
 
@@ -235,8 +235,8 @@ JEV_API_KEY=...                              # hybrid 評分用（沒有就退�
 
 - **語言**：繁中（預設）· 簡體中文 · English · 日本語——Header 與首頁狀態列一鍵切換，存 cookie（`sc_lang`）
 - **語系決定順序**：`sc_lang` cookie → 瀏覽器 `Accept-Language` → 繁中；伺服器產生的動態內容（訪談、逐字稿、破冰卡…）與介面用同一個語系
-- **UI 字典**：`src/lib/i18n-dict.ts` 主字典每語系 253 鍵，加上擴充字典 `src/lib/i18n-ext-a.ts`、`src/lib/i18n-ext-b.ts`（同名 key 以擴充字典為準），合併後每語系 460 鍵（四語系鍵集合一致）；`src/lib/i18n.tsx`（Provider + `useT()`）
-- **動態內容字典**：`src/lib/content.ts`（約 55KB，訪談題庫／對談模板／報告理由／破冰卡／團隊訊息／引擎文案 × 4 語系）
+- **UI 字典**：`src/lib/i18n-dict.ts` 主字典每語系 253 鍵，加上擴充字典 `src/lib/i18n-ext-a.ts`（每語系 121 鍵）、`src/lib/i18n-ext-b.ts`（每語系 102 鍵）（同名 key 以擴充字典為準，其中 12 個覆蓋主字典），合併後每語系 464 鍵（四語系鍵集合一致）；`src/lib/i18n.tsx`（Provider + `useT()`）
+- **動態內容字典**：`src/lib/content.ts`（約 49KB，訪談題庫／對談模板／報告理由／破冰卡／團隊訊息／引擎文案 × 4 語系）
 - 簡中為人工維護的字典（不在執行時轉換）
 
 ### 動態內容也吃語系（cookie → API → LLM）
@@ -313,8 +313,8 @@ tests/
                        #      hackathon i18n i18n-compare i18n-content i18n-pages mobile network
                        #      register-journey swarm
   api/*.spec.ts        # API 層：api-guards auth-security
-  unit/*.test.ts       # 單元（node:test）：append-event decide engine-misc github ledger network
-                       #      pairGate profile-github retain teamAssembler
+  unit/*.test.ts       # 單元（node:test）：append-event compare-input decide engine-misc github ledger
+                       #      matching-event network pairGate profile-github retain teamAssembler
   probes/              # fallback.spec 用的子行程探針（real 模式引擎、端點全指向黑洞）
   global-setup.ts global-teardown.ts helpers.ts
 shots/                 # 靜態展示截圖（多數早於修正版，細節可能與現況不同；測試不會再覆寫，測試截圖寫到 test-results/）
@@ -326,15 +326,15 @@ E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測�
 
 - E2E 用獨立測試 DB 與 mock 設定（見 `playwright.config.ts`），外部端點一律指向不可達的 `127.0.0.1:9`；測試截圖與下載檔寫到 `test-results/`（不進版控）
 - `tests/decision.spec.ts`：透過 `scripts/verify-decision.ts` 在本機 stub server 上驗證三段鏈實際回退、覆蓋不足重打、逐題 fallback、斷路器與逾時（完全離線）
-- `tests/api/auth-security.spec.ts`：真帳號無法被 `sd_uid` 冒用、`/api/users` 不含真帳號、登入第 9 次 429（換 `X-Forwarded-For` 也繞不過）、註冊節流、forgot 不外洩連結、PUT /api/profile 不能寫入 github、跨來源 POST 403、刪除帳號
-- `tests/api/api-guards.spec.ts`：/compare 權限與重跑額度、多工逐字稿串流、執行中重送 409、真人聯絡要對方接受、組隊要所有真人同意、訪談長度上限
+- `tests/api/auth-security.spec.ts`：真帳號無法被 `sd_uid` 冒用、`/api/users` 不含真帳號、登入第 9 次 429（換 `X-Forwarded-For` 也繞不過）、註冊節流、forgot 不外洩連結、PUT /api/profile 不能寫入 github、跨來源 POST 403、刪除帳號（含編譯後訪談原文已清空、刪除後對方的 `/api/agent/runs` 不再列出那場 run）
+- `tests/api/api-guards.spec.ts`：/compare 權限與重跑額度、多工逐字稿串流、執行中重送 409、沒有加入活動的用戶「隊長出發」得 409 `no_event`、不建立任何 run、真人聯絡要對方接受、組隊要所有真人同意、訪談長度上限、訪談第一輪要同意（400 `consent_required`，存 `consentAt` 與隨機 `sid`）
 
 ## 🗺️ 路線圖
 
 - **上線部署（從單機 SQLite 到雲端）**，實際要做的事：
   - SQLite → Postgres：migration 目前是 SQLite 方言（`migration_lock.toml` 綁 sqlite、`DATETIME` 型別、SQLite 對 `JSONB` 只當型別名稱、實際存成文字），要另外產生 Postgres baseline，並寫資料轉換（毫秒時間戳→timestamptz、0/1→boolean、TEXT→jsonb）；連線要走 pooler 並設 `directUrl`
   - 即時事件：bus 是行程內 EventEmitter，多實例要換成共享 pub/sub（Redis、Postgres LISTEN/NOTIFY 或託管 realtime）
-  - 背景工作：互盤是回應後的背景 promise，serverless 不保證跑完，要改用 `after()`／`waitUntil` 或工作佇列
+  - 背景工作：`/api/matching/run` 已用 `after()` 追蹤每場互盤（`maxDuration` 300 秒；自架 `next start` 的 graceful shutdown 與平台 waitUntil 都會等它們跑完）。但一次最多 5 場、real 模式可能跑數分鐘，超過平台時限仍會被中止（超過 10 分鐘仍在 running 的 run 由 `reapStaleRuns` 收尾成 failed）；要穩定跑在 serverless 仍需改成工作佇列（例如 Vercel Queues、Inngest、QStash）
   - 節流、鎖、斷路器：目前都是行程內記憶體，要搬到外部儲存（例如 Redis）
   - 寄信：接 SMTP／寄信服務，才能關掉 `AUTH_DEV_LINKS`
 - **P1**：現場模式（QR 進桌、同桌輪轉破冰題）、團隊章程生成（分工表／milestone）、Discord／Line 通知、GitHub 所有權驗證（OAuth 或 bio／gist 驗證碼）
@@ -351,7 +351,7 @@ E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測�
 - **真 LLM／Jev 模式需要付費 key**：現場數據（Jev 評分、/compare 延遲、token）用 fresh clone 的 mock 模式無法重現；LLM 輸出有隨機性，即使有 key 也不會得到相同數字
 - **/compare** 每場只有一次單體取樣，且單體沿用蜂群逐字稿；不能當統計結論
 - **SSE 單實例**；前端斷線後的重連策略以各頁實作為準
-- **隱私告知只在前端把關**：新訪談開始前會顯示資料去向說明，勾選同意後才開始（見上方「隱私與資料流」）；伺服器不記錄同意時間，也不會擋下沒經過這一頁、直接呼叫訪談 API 的請求。另外，訪談與檔案編譯送往 LLM 供應商的 `x-opencode-session` 仍是 userId
+- **保存期限靠人工執行**：告知卡與本文件寫明活動結束 30 天後清除非種子帳號，但目前沒有自動排程或清除腳本，要由營運者手動執行；此修正前已編譯的檔案仍留有訪談原文
 
 ---
 
