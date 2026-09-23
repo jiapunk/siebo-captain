@@ -1,0 +1,510 @@
+# 全新 clone 重现（生成时间：2026-09-23 08:25 PDT，commit：599b0e3，分支 review-fixes）
+# 路径已去识别：<repo> = 仓库根目录，<scratchpad> = 本机临时目录
+# 做法：git clone 本机修正版仓库到临时目录（<scratchpad>/fresh-verify1），**不手动建立 .env**，
+#       依文件顺序执行：npm install → npm run setup → npm run typecheck → npm run lint → npm run build
+#       → npm run test:unit → E2E_PORT=3110 npm run test:e2e。每步记录 exit 与耗时（秒）。
+# 备注：本机已有 Playwright chromium 缓存，所以没有另跑 `npx playwright install chromium`；
+#       npm install 走本机 npm 缓存，耗时较短。npm audit 的 3 个 high 见 AUDIT.md §6（prisma CLI 依赖链）。
+
+## 摘要
+clone exit=0
+branch=review-fixes commit=599b0e3
+.env exists before setup: no
+npm install | exit=0 | 7s
+npm run setup | exit=0 | 6s
+.env after setup: created
+npm run typecheck | exit=0 | 6s
+npm run lint | exit=0 | 5s
+npm run build | exit=0 | 8s
+npm run test:unit | exit=0 | 0s
+E2E_PORT=3110 npm run test:e2e | exit=0 | 160s
+git status after all steps:
+ALL DONE
+
+## 完整输出
+## git clone <repo>
+Cloning into '<scratchpad>/fresh-verify1'...
+done.
+
+## npm install
+npm warn deprecated eslint@9.39.5: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 408 packages, and audited 409 packages in 6s
+
+152 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+## -> exit=0 (7s)
+
+## npm run setup
+
+> siebo-captain@0.1.0 setup
+> node scripts/ensure-env.mjs && npm i && prisma migrate deploy && tsx prisma/seed.ts
+
+[setup] 已從 .env.example 建立 .env（mock 模式、EvoMap 關閉、金鑰空白）
+[setup] 要接真 LLM / Jev：編輯 .env 的 LLM_PROVIDER、LLM_API_KEY、JEV_API_KEY
+
+up to date, audited 409 packages in 3s
+
+152 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": SQLite database "dev.db" at "file:./dev.db"
+
+SQLite database dev.db created at file:./dev.db
+
+1 migration found in prisma/migrations
+
+Applying migration `20260923000000_baseline`
+
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.15                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+The following migration(s) have been applied:
+
+migrations/
+  └─ 20260923000000_baseline/
+    └─ migration.sql
+      
+All migrations have been successfully applied.
+Seeded event「EvoTavern」(EVOTAVERN). Seed participants: 9, real accounts re-joined: 0, total users: 9, removed seed-only runs/teams: 0/0
+## -> exit=0 (6s)
+
+## npm run typecheck
+
+> siebo-captain@0.1.0 typecheck
+> next typegen && tsc --noEmit
+
+Generating route types...
+✓ Types generated successfully
+## -> exit=0 (6s)
+
+## npm run lint
+
+> siebo-captain@0.1.0 lint
+> eslint
+
+## -> exit=0 (5s)
+
+## npm run build
+
+> siebo-captain@0.1.0 build
+> next build
+
+▲ Next.js 16.3.5 (Turbopack)
+- Environments: .env
+✓ Running next.config.ts took 11ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 2.3s
+  Running TypeScript ...
+  Finished TypeScript in 2.3s ...
+  Collecting page data using 17 workers ...
+  Generating static pages using 17 workers (0/13) ...
+  Generating static pages using 17 workers (3/13) 
+  Generating static pages using 17 workers (6/13) 
+  Generating static pages using 17 workers (9/13) 
+✓ Generating static pages using 17 workers (13/13) in 108ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /agent
+├ ƒ /api/agent/runs
+├ ƒ /api/agent/runs/[id]/stream
+├ ƒ /api/agent/runs/stream
+├ ƒ /api/auth/forgot
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/register
+├ ƒ /api/auth/resend-verify
+├ ƒ /api/auth/reset
+├ ƒ /api/auth/verify
+├ ƒ /api/bus/user
+├ ƒ /api/compare
+├ ƒ /api/connections
+├ ƒ /api/connections/[id]
+├ ƒ /api/connections/[id]/accept
+├ ƒ /api/connections/[id]/messages
+├ ƒ /api/connections/[id]/stream
+├ ƒ /api/connections/[id]/typing
+├ ƒ /api/events/current
+├ ƒ /api/events/join
+├ ƒ /api/evomap
+├ ƒ /api/matching/run
+├ ƒ /api/me
+├ ƒ /api/network
+├ ƒ /api/onboarding/compile
+├ ƒ /api/onboarding/message
+├ ƒ /api/people
+├ ƒ /api/people/[id]/icebreakers
+├ ƒ /api/profile
+├ ƒ /api/profile/verify/github
+├ ƒ /api/session
+├ ƒ /api/teams
+├ ƒ /api/teams/[id]
+├ ƒ /api/teams/[id]/messages
+├ ƒ /api/teams/[id]/stream
+├ ƒ /api/teams/[id]/typing
+├ ƒ /api/teams/assemble
+├ ƒ /api/users
+├ ƒ /compare
+├ ƒ /connect/[id]
+├ ƒ /login
+├ ƒ /onboarding
+├ ƒ /people
+├ ƒ /profile
+├ ƒ /reset
+├ ƒ /team/[id]
+├ ƒ /teams
+└ ƒ /verify
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+
+## -> exit=0 (8s)
+
+## npm run test:unit
+
+> siebo-captain@0.1.0 test:unit
+> tsx --test tests/unit/*.test.ts
+
+TAP version 13
+# [decide] jev 覆蓋不足（1/3）→ 只重打缺漏的 2 題
+# [decide] jev 覆蓋不足（1/3）→ 只重打缺漏的 2 題
+# [decide] jev 覆蓋不足（0/3）→ 只重打缺漏的 3 題
+# [decide] jev 不可用（no_valid_answers）→ 下一層
+# Subtest: parseAnswer：範圍與枚舉驗證
+ok 1 - parseAnswer：範圍與枚舉驗證
+  ---
+  duration_ms: 0.757042
+  type: 'test'
+  ...
+# Subtest: 逐題 fallback：不合法的題目退回規則，只重打缺漏題並合併
+ok 2 - 逐題 fallback：不合法的題目退回規則，只重打缺漏題並合併
+  ---
+  duration_ms: 9.514792
+  type: 'test'
+  ...
+# Subtest: 第 2 次重打失敗時保留第 1 次的部分答案
+ok 3 - 第 2 次重打失敗時保留第 1 次的部分答案
+  ---
+  duration_ms: 0.711708
+  type: 'test'
+  ...
+# Subtest: 遠端一題有效答案都沒有 → source 必須是 mock，不能標 jev
+ok 4 - 遠端一題有效答案都沒有 → source 必須是 mock，不能標 jev
+  ---
+  duration_ms: 0.82675
+  type: 'test'
+  ...
+# [decide] jev 不可用（timeout）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
+# Subtest: 逾時涵蓋讀 body：標頭回來後 body 卡住也會在時限內退回規則
+ok 5 - 逾時涵蓋讀 body：標頭回來後 body 卡住也會在時限內退回規則
+  ---
+  duration_ms: 151.3995
+  type: 'test'
+  ...
+# Subtest: 斷路器：連續 3 次失敗才打開；成功歸零
+ok 6 - 斷路器：連續 3 次失敗才打開；成功歸零
+  ---
+  duration_ms: 1.79225
+  type: 'test'
+  ...
+# Subtest: 斷路器：冷卻後半開只放一個探測，探測成功才關閉
+ok 7 - 斷路器：冷卻後半開只放一個探測，探測成功才關閉
+  ---
+  duration_ms: 0.116125
+  type: 'test'
+  ...
+# Subtest: 斷路器：並行呼叫在半開時只有一個真的送出
+ok 8 - 斷路器：並行呼叫在半開時只有一個真的送出
+  ---
+  duration_ms: 21.825625
+  type: 'test'
+  ...
+# Subtest: 候選排序：未互盤真人 → 未互盤 bot → 互盤過的（真人先、最久以前先）；上限 5
+ok 9 - 候選排序：未互盤真人 → 未互盤 bot → 互盤過的（真人先、最久以前先）；上限 5
+  ---
+  duration_ms: 0.642833
+  type: 'test'
+  ...
+# Subtest: 分享權限：dealbreakers 預設不外送，只有明確設為 true 才顯示
+ok 10 - 分享權限：dealbreakers 預設不外送，只有明確設為 true 才顯示
+  ---
+  duration_ms: 3.021208
+  type: 'test'
+  ...
+# Subtest: sanitizeProfile：型別錯誤不會讓下游崩潰、長度有上限、去掉資料分隔標記
+ok 11 - sanitizeProfile：型別錯誤不會讓下游崩潰、長度有上限、去掉資料分隔標記
+  ---
+  duration_ms: 0.244917
+  type: 'test'
+  ...
+# Subtest: mock 團隊回覆／私訊：第 4 個參數是 sessionId，locale 不再被蓋掉
+ok 12 - mock 團隊回覆／私訊：第 4 個參數是 sessionId，locale 不再被蓋掉
+  ---
+  duration_ms: 0.166625
+  type: 'test'
+  ...
+# Subtest: 能力分：基準 35
+ok 13 - 能力分：基準 35
+  ---
+  duration_ms: 0.434167
+  type: 'test'
+  ...
+# Subtest: 能力分：各項加權與上限
+ok 14 - 能力分：各項加權與上限
+  ---
+  duration_ms: 3.123167
+  type: 'test'
+  ...
+# Subtest: 能力分：夾在 30–98
+ok 15 - 能力分：夾在 30–98
+  ---
+  duration_ms: 0.130541
+  type: 'test'
+  ...
+# Subtest: 聚類係數：三角形 = 1
+ok 16 - 聚類係數：三角形 = 1
+  ---
+  duration_ms: 0.476208
+  type: 'test'
+  ...
+# Subtest: 聚類係數：路徑 = 0
+ok 17 - 聚類係數：路徑 = 0
+  ---
+  duration_ms: 2.655334
+  type: 'test'
+  ...
+# Subtest: 聚類係數：孤立點與 degree 1 的節點記 0 並計入平均（標準定義）
+ok 18 - 聚類係數：孤立點與 degree 1 的節點記 0 並計入平均（標準定義）
+  ---
+  duration_ms: 0.182084
+  type: 'test'
+  ...
+# Subtest: 雙信號模擬：選出三人隊（三角形）時聚類 > 0，且兩種信號可區分
+ok 19 - 雙信號模擬：選出三人隊（三角形）時聚類 > 0，且兩種信號可區分
+  ---
+  duration_ms: 0.66125
+  type: 'test'
+  ...
+# Subtest: 雙信號模擬：沒有合格假設時不加邊
+ok 20 - 雙信號模擬：沒有合格假設時不加邊
+  ---
+  duration_ms: 0.047959
+  type: 'test'
+  ...
+# Subtest: 門檻常數：雷達 50、優先 60
+ok 21 - 門檻常數：雷達 50、優先 60
+  ---
+  duration_ms: 0.326958
+  type: 'test'
+  ...
+# Subtest: pairScores 依視角對調 mine / theirs
+ok 22 - pairScores 依視角對調 mine / theirs
+  ---
+  duration_ms: 0.308833
+  type: 'test'
+  ...
+# Subtest: pairScores：缺報告或 score 格式不符時為 null
+ok 23 - pairScores：缺報告或 score 格式不符時為 null
+  ---
+  duration_ms: 0.088125
+  type: 'test'
+  ...
+# Subtest: radarBand：看雙方較低分
+ok 24 - radarBand：看雙方較低分
+  ---
+  duration_ms: 0.054541
+  type: 'test'
+  ...
+# Subtest: bothPass：雙方都 ≥ 60
+ok 25 - bothPass：雙方都 ≥ 60
+  ---
+  duration_ms: 0.081875
+  type: 'test'
+  ...
+# Subtest: latestRunPerPeer：每位對象取最新一筆（不看分數）
+ok 26 - latestRunPerPeer：每位對象取最新一筆（不看分數）
+  ---
+  duration_ms: 0.11675
+  type: 'test'
+  ...
+# Subtest: RETAIN：決策值原樣進入報告 → retained
+ok 27 - RETAIN：決策值原樣進入報告 → retained
+  ---
+  duration_ms: 1.217292
+  type: 'test'
+  ...
+# Subtest: RETAIN：0–100 換算被 25–97 夾限 → 不保留
+ok 28 - RETAIN：0–100 換算被 25–97 夾限 → 不保留
+  ---
+  duration_ms: 0.340334
+  type: 'test'
+  ...
+# Subtest: RETAIN：規則覆寫決策層（同角色群強制 roleOverlap）→ 不保留
+ok 29 - RETAIN：規則覆寫決策層（同角色群強制 roleOverlap）→ 不保留
+  ---
+  duration_ms: 0.101709
+  type: 'test'
+  ...
+# Subtest: RETAIN：遠端逐題退回規則算不保留；規則層本身直通算保留
+ok 30 - RETAIN：遠端逐題退回規則算不保留；規則層本身直通算保留
+  ---
+  duration_ms: 0.070333
+  type: 'test'
+  ...
+# Subtest: 假設 ID 由排序後的成員 id 組成（順序無關）
+ok 31 - 假設 ID 由排序後的成員 id 組成（順序無關）
+  ---
+  duration_ms: 0.941625
+  type: 'test'
+  ...
+# Subtest: 硬約束：分數 ≥ 60、無角色缺口、無死鎖
+ok 32 - 硬約束：分數 ≥ 60、無角色缺口、無死鎖
+  ---
+  duration_ms: 2.839458
+  type: 'test'
+  ...
+# Subtest: 不重疊貪婪：分數高者先選、隊友不重複、最多 3 隊、不改動輸入
+ok 33 - 不重疊貪婪：分數高者先選、隊友不重複、最多 3 隊、不改動輸入
+  ---
+  duration_ms: 0.185917
+  type: 'test'
+  ...
+# Subtest: 隊伍理由：目標不一致用專屬文案、不重複、非中文語系不混入模板中文
+ok 34 - 隊伍理由：目標不一致用專屬文案、不重複、非中文語系不混入模板中文
+  ---
+  duration_ms: 0.855417
+  type: 'test'
+  ...
+# Subtest: 隊伍理由：未公開的角色顯示為隱藏字樣
+ok 35 - 隊伍理由：未公開的角色顯示為隱藏字樣
+  ---
+  duration_ms: 0.275666
+  type: 'test'
+  ...
+# Subtest: team_eval RETAIN：規則層直通算保留；遠端有題目退回規則算不保留
+ok 36 - team_eval RETAIN：規則層直通算保留；遠端有題目退回規則算不保留
+  ---
+  duration_ms: 0.070542
+  type: 'test'
+  ...
+1..36
+# tests 36
+# suites 0
+# pass 36
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 322.991583
+## -> exit=0 (0s)
+
+## E2E_PORT=3110 npm run test:e2e
+
+> siebo-captain@0.1.0 test:e2e
+> playwright test
+
+[e2e] 準備測試 DB：<scratchpad>/fresh-verify1/prisma/test-3110.db
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": SQLite database "test-3110.db" at "file:./test-3110.db"
+
+SQLite database test-3110.db created at file:./test-3110.db
+
+1 migration found in prisma/migrations
+
+Applying migration `20260923000000_baseline`
+
+The following migration(s) have been applied:
+
+migrations/
+  └─ 20260923000000_baseline/
+    └─ migration.sql
+      
+All migrations have been successfully applied.
+Demo data reset. Seed participants preserved.
+Seeded event「EvoTavern」(EVOTAVERN). Seed participants: 9, real accounts re-joined: 0, total users: 9, removed seed-only runs/teams: 0/0
+
+Running 38 tests using 1 worker
+
+  ✓   1 tests/api/api-guards.spec.ts:164:5 › compare：非當事人讀不到也不能重跑；當事人重跑每分鐘 1 次 (352ms)
+  ✓   2 tests/api/api-guards.spec.ts:207:5 › 多工逐字稿串流：非成員 403、參數檢查、已完成的 run 補歷史後關閉 (512ms)
+  ✓   3 tests/api/api-guards.spec.ts:245:5 › 隊長出發：執行中重送 409 already_running；多工串流一條連線看完全部 run (9.4s)
+  ✓   4 tests/api/api-guards.spec.ts:282:5 › 持續聯絡：真人對真人要對方接受；重複邀請不產生重複資料；未驗證帳號被擋 (1.4s)
+  ✓   5 tests/api/api-guards.spec.ts:350:5 › 組隊：兩位真人都同意才成立；bot 視為已同意；成立後收回其他提案 (1.0s)
+  ✓   6 tests/api/api-guards.spec.ts:413:5 › 訪談：訊息長度上限、壞 JSON 回 400 (129ms)
+  ✓   7 tests/api/auth-security.spec.ts:57:5 › 真帳號無法被 sd_uid 冒用（手動塞 cookie 也不行） (242ms)
+  ✓   8 tests/api/auth-security.spec.ts:72:5 › /api/users 只列示範身分、不含真帳號與 email (104ms)
+  ✓   9 tests/api/auth-security.spec.ts:83:5 › POST /api/session：真帳號 403、示範身分可切換、真 session 永遠優先 (141ms)
+  ✓  10 tests/api/auth-security.spec.ts:127:5 › 登入失敗 8 次後第 9 次得 429，換 X-Forwarded-For 也繞不過 (491ms)
+  ✓  11 tests/api/auth-security.spec.ts:180:5 › register 節流：同一 email 15 分鐘第 6 次得 429 (67ms)
+  ✓  12 tests/api/auth-security.spec.ts:194:5 › forgot：不存在的帳號回應與有帳號時同形狀，且不外洩連結 (93ms)
+  ✓  13 tests/api/auth-security.spec.ts:208:5 › PUT /api/profile：不能寫入 github、格式錯誤回 400 (277ms)
+  ✓  14 tests/api/auth-security.spec.ts:293:5 › 跨來源 POST 得 403 bad_origin；同源與 GET 不受影響 (95ms)
+  ✓  15 tests/api/auth-security.spec.ts:317:5 › DELETE /api/me：刪除後 /api/me 為 null、無法再登入；示範身分可刪、種子角色不可刪 (244ms)
+  ✓  16 tests/auth.spec.ts:8:5 › 真帳號：註冊 → 加入場次 → 登出 → 登入 (2.5s)
+  ✓  17 tests/auth.spec.ts:70:5 › 未登入：受保護 API 回 401，需要身分的頁面導回首頁 (2.8s)
+  ✓  18 tests/compare.spec.ts:47:5 › 單體 vs 蜂群對照：跑一次單體 baseline 並顯示取捨表 (10.4s)
+  ✓  19 tests/contacts.spec.ts:8:5 › 持續聯絡：破冰卡保持聯絡 → 隊伍頁清單 → 一對一私訊 (15.1s)
+  ✓  20 tests/decision.spec.ts:60:5 › 三段鏈順序：依 key 與 DECISION_PROVIDER/FALLBACK 組出 Jev→LLM→規則 (0ms)
+  ✓  21 tests/decision.spec.ts:76:5 › fallback 實際穿過三段：Jev 401 → LLM 接手；LLM 壞 JSON → 規則；Jev 連不上 → 規則 (1ms)
+  ✓  22 tests/decision.spec.ts:100:5 › 覆蓋不足重試：第 1 次缺題 → 只重打缺漏題並補齊（retries=1、fallbacks=0） (0ms)
+  ✓  23 tests/decision.spec.ts:111:5 › 逐題 fallback：不合法的那一題退回規則，其餘採用 Jev 答案 (0ms)
+  ✓  24 tests/decision.spec.ts:122:5 › 斷路器：連續 3 次 Jev 失敗後第 4 次直接跳過（不再發請求） (0ms)
+  ✓  25 tests/decision.spec.ts:133:5 › 逾時涵蓋讀 body，且 hybrid 報告路徑帶 decisionSource=jev 與規則對照分 (1ms)
+  ✓  26 tests/decision.spec.ts:156:5 › jev-smoke CLI：無 key 用本機規則；壞 key 打黑洞位址失敗後退回規則（不連外） (579ms)
+  ✓  27 tests/dynamic-i18n.spec.ts:8:5 › 動態內容四語系：隊長訪談回覆隨語系切換 (219ms)
+  ✓  28 tests/evomap.spec.ts:18:5 › EvoMap 預設 opt-out：狀態可查、動作限管理者、UI 標示 OFF (534ms)
+  ✓  29 tests/evomap.spec.ts:51:5 › EvoMap：一般真帳號（不在管理者清單）也是 403 (74ms)
+  ✓  30 tests/hackathon.spec.ts:9:5 › 組隊局：隊長出發 → 隊伍提案 → 加入 → 團隊聊天 (20.1s)
+  ✓  31 tests/i18n-compare.spec.ts:53:5 › /compare 在简中與 EN 模式下沒有繁中殘留 (10.4s)
+  ✓  32 tests/i18n-content.spec.ts:8:5 › 動態內容多語系：EN 模式下隊長對談與報告為英文 (10.4s)
+  ✓  33 tests/i18n.spec.ts:3:5 › 多語系：繁中預設 → EN → 简中 → 日本語，重載後保留 (687ms)
+  ✓  34 tests/mobile.spec.ts:18:5 › 行動裝置：底部 Dock 單列導覽、各頁無水平捲動 (1.5s)
+  ✓  35 tests/network.spec.ts:25:5 › 帳本記帳 → 網絡圖 → 社交/能力信號對照 (15.4s)
+  ✓  36 tests/register-journey.spec.ts:14:5 › 註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼重設 (23.1s)
+  ✓  37 tests/swarm.spec.ts:20:5 › 蜂群 Part 覆蓋 + 假設評估式組隊 (11.0s)
+  ✓  38 tests/swarm.spec.ts:81:5 › 故障演練：Part 首次失敗 → R1 重試接力，run 仍完整 6/6 (10.9s)
+
+  38 passed (2.7m)
+## -> exit=0 (160s)

@@ -175,7 +175,7 @@ LLM_PROVIDER=hybrid → LLM 負責對談／文案 ＋ 決策層負責評分（�
   - 透明性：報告記錄 `decisionSource`（jev／llm／mock）、逐題退回數與覆蓋明細，指揮台顯示 `ENGINE // JEV|LLM|MOCK`
 - 題數：互盤報告 8 題（5 個維度分＋3 個旗標）；隊伍評估 7 題
 - 驗證：`npx tsx scripts/jev-smoke.ts [--bad-key] [--report]`（會讀 `.env`）；單元測試 `tests/unit/decide.test.ts`（逐題 fallback、只重打缺漏題、逾時涵蓋 body、斷路器連續／半開／並行）；E2E `tests/decision.spec.ts`（本機 stub server，完全離線）
-- 實測延遲與 token：〔待驗證階段更新〕（需要付費的 Jev／LLM key；報告 Part 的 token 用量記在 `MatchReport.usage` 與 `SwarmPart`）
+- 實測延遲與 token：demo 資料中一場 hybrid 互盤的評分步驟，Jev（`r:A`）1,492 ms、單體 LLM 22,904 ms；互盤 Part 平均延遲 7.7–16.3 秒（見 `audit/evidence/live-api.txt`）。token：修正版會記錄供應商回傳的用量（`MatchReport.usage`、`SwarmPart`，`/api/compare` 的 `tokens`），但 demo 資料是修正前寫入的、沒有 token 紀錄（null），mock 模式也不產生 token；要實測需付費的 Jev／LLM key
 
 ## 🤖 LLM 設定
 
@@ -232,7 +232,7 @@ JEV_API_KEY=...                              # hybrid 評分用（沒有就退�
 
 - **語言**：繁中（預設）· 簡體中文 · English · 日本語——Header 與首頁狀態列一鍵切換，存 cookie（`sc_lang`）
 - **語系決定順序**：`sc_lang` cookie → 瀏覽器 `Accept-Language` → 繁中；伺服器產生的動態內容（訪談、逐字稿、破冰卡…）與介面用同一個語系
-- **UI 字典**：`src/lib/i18n-dict.ts` 主字典每語系 253 鍵，加上擴充字典 `src/lib/i18n-ext-a.ts`、`src/lib/i18n-ext-b.ts`（同名 key 以擴充字典為準），合併後目前每語系約 370 鍵（最終數字〔待驗證階段更新〕）；`src/lib/i18n.tsx`（Provider + `useT()`）
+- **UI 字典**：`src/lib/i18n-dict.ts` 主字典每語系 253 鍵，加上擴充字典 `src/lib/i18n-ext-a.ts`、`src/lib/i18n-ext-b.ts`（同名 key 以擴充字典為準），合併後每語系 460 鍵（四語系鍵集合一致）；`src/lib/i18n.tsx`（Provider + `useT()`）
 - **動態內容字典**：`src/lib/content.ts`（約 55KB，訪談題庫／對談模板／報告理由／破冰卡／團隊訊息／引擎文案 × 4 語系）
 - 簡中為人工維護的字典（不在執行時轉換）
 
@@ -316,7 +316,7 @@ shots/                 # 靜態展示截圖（歷史畫面，測試不會再覆�
 
 ## 🧪 測試
 
-E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測試在 `tests/unit/*.test.ts`（node:test）。測試數與執行結果〔待驗證階段更新〕；逐項斷言見 [AUDIT §2](./AUDIT.md)。
+E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測試在 `tests/unit/*.test.ts`（node:test）。目前 E2E 38 項、單元 36 項全數通過（commit `599b0e3`，完整輸出見 `audit/evidence/test-run.txt`）；逐項斷言見 [AUDIT §2](./AUDIT.md)。
 
 - E2E 用獨立測試 DB 與 mock 設定（見 `playwright.config.ts`），外部端點一律指向不可達的 `127.0.0.1:9`；測試截圖與下載檔寫到 `test-results/`（不進版控）
 - `tests/decision.spec.ts`：透過 `scripts/verify-decision.ts` 在本機 stub server 上驗證三段鏈實際回退、覆蓋不足重打、逐題 fallback、斷路器與逾時（完全離線）

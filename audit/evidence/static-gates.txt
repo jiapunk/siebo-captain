@@ -1,44 +1,182 @@
-# 静态质量闸门（生成时间：2026-09-22 19:34 PDT，commit：be773f2）
-# 〔修正版注〕本文件是修正前（commit be773f2）的旧证据，验证阶段会以修正版重新生成；解读方式见 AUDIT.md §4。
-# 〔修正版注〕build 输出在 (3/13) 截断、没有路由表；tsc 是在已有 Next 生成类型的目录里跑的（fresh clone 请用 npm run typecheck）；密钥扫描只比对一把 key，范围不足，原本写出的 key 前缀已移除。
+# 静态质量闸门（生成时间：2026-09-23 08:25 PDT，commit：599b0e3，分支 review-fixes）
+# 路径已去识别：<repo> = 仓库根目录，<scratchpad> = 本机临时目录
+# 环境：Node v22.22.2 · npm 10.9.7 · macOS；命令在修正版工作目录执行，下面是完整原始输出（未截断）
+# 说明：build 用 NEXT_DIST_DIR=.next-gate（避免与其他 dev server 的 .next 锁冲突），并强制 mock、金钥留空；
+#       Next 会因非默认 distDir 自动在 tsconfig.json 的 include 加两行，跑完已还原（未提交）。
+#       全新 clone 用默认 `npm run build` 的结果见 fresh-clone.txt。
 
-## tsc --noEmit
-exit=0（无输出）
+## npm run typecheck（= next typegen && tsc --noEmit）
+$ npm run typecheck
 
-## npm run lint
+> siebo-captain@0.1.0 typecheck
+> next typegen && tsc --noEmit
 
-✖ 11 problems (0 errors, 11 warnings)
+Generating route types...
+✓ Types generated successfully
+exit=0 (1s)
 
+## npm run lint（react-hooks/set-state-in-effect 已恢复为 error）
+$ npm run lint
 
-## npm run build
-✓ Running next.config.ts took 12ms
-✓ Compiled successfully in 598ms
+> siebo-captain@0.1.0 lint
+> eslint
+
+exit=0 (2s)
+
+$ npx eslint . --format json → 统计
+files=141 errors=0 warnings=0
+
+$ grep set-state-in-effect eslint.config.mjs
+11:      "react-hooks/set-state-in-effect": "error",
+
+## next build（完整输出，含路由表；无 whole-project tracing / Turbopack 警告）
+$ NEXT_DIST_DIR=.next-gate npx next build   (LLM_PROVIDER=mock DECISION_PROVIDER=mock GITHUB_VERIFY=mock EVOMAP_ENABLED=0，金钥留空)
+▲ Next.js 16.3.5 (Turbopack)
+- Environments: .env
+✓ Running next.config.ts took 10ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1342ms
+  Running TypeScript ...
+
+  We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
+  The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+
+  	- include was updated to add '.next-gate/types/**/*.ts'
+  	- include was updated to add '.next-gate/dev/types/**/*.ts'
+
+  Finished TypeScript in 2.1s ...
+  Collecting page data using 17 workers ...
   Generating static pages using 17 workers (0/13) ...
   Generating static pages using 17 workers (3/13) 
+  Generating static pages using 17 workers (6/13) 
+  Generating static pages using 17 workers (9/13) 
+✓ Generating static pages using 17 workers (13/13) in 100ms
+  Finalizing page optimization ...
 
-## prisma migrate status
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /agent
+├ ƒ /api/agent/runs
+├ ƒ /api/agent/runs/[id]/stream
+├ ƒ /api/agent/runs/stream
+├ ƒ /api/auth/forgot
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/register
+├ ƒ /api/auth/resend-verify
+├ ƒ /api/auth/reset
+├ ƒ /api/auth/verify
+├ ƒ /api/bus/user
+├ ƒ /api/compare
+├ ƒ /api/connections
+├ ƒ /api/connections/[id]
+├ ƒ /api/connections/[id]/accept
+├ ƒ /api/connections/[id]/messages
+├ ƒ /api/connections/[id]/stream
+├ ƒ /api/connections/[id]/typing
+├ ƒ /api/events/current
+├ ƒ /api/events/join
+├ ƒ /api/evomap
+├ ƒ /api/matching/run
+├ ƒ /api/me
+├ ƒ /api/network
+├ ƒ /api/onboarding/compile
+├ ƒ /api/onboarding/message
+├ ƒ /api/people
+├ ƒ /api/people/[id]/icebreakers
+├ ƒ /api/profile
+├ ƒ /api/profile/verify/github
+├ ƒ /api/session
+├ ƒ /api/teams
+├ ƒ /api/teams/[id]
+├ ƒ /api/teams/[id]/messages
+├ ƒ /api/teams/[id]/stream
+├ ƒ /api/teams/[id]/typing
+├ ƒ /api/teams/assemble
+├ ƒ /api/users
+├ ƒ /compare
+├ ƒ /connect/[id]
+├ ƒ /login
+├ ƒ /onboarding
+├ ƒ /people
+├ ƒ /profile
+├ ƒ /reset
+├ ƒ /team/[id]
+├ ƒ /teams
+└ ƒ /verify
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+
+exit=0 (6s)
+# 输出中 "tracing" / "whole project" / "⚠" 出现次数：0
+
+## prisma migrate status（对 prisma/dev.db 的临时副本执行，不碰 demo 数据库本身）
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": SQLite database "devcopy.db" at "file:<scratchpad>/gate/devcopy.db"
+
+1 migration found in prisma/migrations
 
 Database schema is up to date!
+exit=0
 
-## 环境（不含机密值）
+## 环境（修正版工作目录的 .env，mock 模式；机密值只列长度）
 DATABASE_URL="file:./dev.db"
-LLM_PROVIDER=hybrid
+LLM_PROVIDER=mock
 LLM_BASE_URL=https://opencode.ai/zen/go/v1
-LLM_API_KEY=<67 chars, masked>
+LLM_API_KEY=
 LLM_MODEL=deepseek-v4.1-flash
 AUTH_DEV_LINKS=on
 EVENT_NAME="EvoTavern"
 EVENT_CODE=EVOTAVERN
 EVENT_STARTS_AT=2026-09-21T09:00:00+08:00
 EVENT_ENDS_AT=2026-09-24T23:59:59+08:00
-DECISION_PROVIDER=jev
-JEV_API_KEY=<108 chars, masked>
-JEV_MODEL=<10 chars, masked>
+DECISION_PROVIDER=mock
+JEV_API_KEY=
+JEV_MODEL=jev-latest
 JEV_TIMEOUT_MS=6000
 EVOMAP_NODE_ID=node_74fc6e393a8171eb
-EVOMAP_NODE_SECRET=<64 chars, masked>
-EVOMAP_ENABLED=1
+EVOMAP_NODE_SECRET=
+EVOMAP_ENABLED=0
 
-## 机密扫描（追踪文件中的真实密钥）
-<JEV key 前缀（已移除）> 命中: 0
-tracked .env 文件数: 0
+## 机密扫描（对 .env 与 .env.live 的全部值比对；只列变量名、长度与命中数，不印出值）
+tracked files scanned: 208
+## .env: 17 vars
+  DATABASE_URL (value, 13 chars): hits=5 (non-secret, informational)
+  LLM_BASE_URL (value, 29 chars): hits=6 (non-secret, informational)
+  LLM_API_KEY: <empty/short, skipped>
+  LLM_MODEL (value, 19 chars): hits=7 (non-secret, informational)
+  EVENT_NAME (value, 9 chars): hits=9 (non-secret, informational)
+  EVENT_CODE (value, 9 chars): hits=10 (non-secret, informational)
+  EVENT_STARTS_AT (value, 25 chars): hits=6 (non-secret, informational)
+  EVENT_ENDS_AT (value, 25 chars): hits=5 (non-secret, informational)
+  JEV_API_KEY: <empty/short, skipped>
+  JEV_MODEL (value, 10 chars): hits=2 (non-secret, informational)
+  EVOMAP_NODE_ID (value, 21 chars): hits=4 (non-secret, informational)
+  EVOMAP_NODE_SECRET: <empty/short, skipped>
+## .env.live: 17 vars
+  DATABASE_URL (value, 13 chars): hits=5 (non-secret, informational)
+  LLM_BASE_URL (value, 29 chars): hits=6 (non-secret, informational)
+  LLM_API_KEY (SECRET, 67 chars): hits=0
+  LLM_MODEL (value, 19 chars): hits=7 (non-secret, informational)
+  EVENT_NAME (value, 9 chars): hits=9 (non-secret, informational)
+  EVENT_CODE (value, 9 chars): hits=10 (non-secret, informational)
+  EVENT_STARTS_AT (value, 25 chars): hits=6 (non-secret, informational)
+  EVENT_ENDS_AT (value, 25 chars): hits=5 (non-secret, informational)
+  JEV_API_KEY (SECRET, 108 chars): hits=0
+  JEV_MODEL (value, 10 chars): hits=2 (non-secret, informational)
+  EVOMAP_NODE_ID (value, 21 chars): hits=4 (non-secret, informational)
+  EVOMAP_NODE_SECRET (SECRET, 64 chars): hits=0
+secret-valued vars matched in tracked files: 0
+tracked .env* files: ['.env.example']
+## git history (15 commits, all refs, full patches incl. binary-as-text)
+  .env.live:LLM_API_KEY (67 chars): hits=0
+  .env.live:JEV_API_KEY (108 chars): hits=0
+  .env.live:EVOMAP_NODE_SECRET (64 chars): hits=0
