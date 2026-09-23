@@ -1,4 +1,5 @@
 import type { Locale } from "./i18n-dict";
+import { isRedacted } from "./profile";
 
 /** 動態內容包：隊長訪談、互盤對談、報告、破冰卡、團隊訊息、引擎文案 */
 export interface ContentData {
@@ -1178,8 +1179,10 @@ export function roleKeyOf(role: string): string {
   return hit ?? raw;
 }
 
-/** 角色字串（任意語系）→ 當前語系的顯示名稱 */
+/** 角色字串（任意語系）→ 當前語系的顯示名稱；被分享權限遮蔽的（REDACTED）顯示該語系的「未公開」 */
 export function roleDisplay(locale: Locale, role: string): string {
+  const c = CONTENT[locale] ?? CONTENT.zh;
+  if (isRedacted(role)) return c.asm.hidden;
   const key = roleKeyOf(role);
-  return (CONTENT[locale] ?? CONTENT.zh).roleLabels[key] ?? role;
+  return c.roleLabels[key] ?? role;
 }

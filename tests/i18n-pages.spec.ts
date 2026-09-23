@@ -66,7 +66,9 @@ async function check(
   if (lang === "ja") expect.soft(text, `ja ${path} 應有日文 UI（假名）`).toMatch(KANA_RE);
 }
 
-test.beforeAll(() => {
+// 每個語系各自從乾淨的種子開始：/agent 會列出「對方發起、我是 B 方」的 run，
+// 共用一份資料時後面的語系會看到前面語系的 run（數量對不上），且結果會隨 worker 是否重啟而不同
+test.beforeEach(() => {
   resetDemo();
 });
 

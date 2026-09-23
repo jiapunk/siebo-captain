@@ -7,6 +7,7 @@ import AppHeader from "@/components/AppHeader";
 import { IconLock, IconUsers } from "@/components/Icons";
 import { api, useMe, useUserBus } from "@/lib/client";
 import { apiErrorMessage, useI18n } from "@/lib/i18n";
+import { roleDisplay } from "@/lib/content";
 
 interface Member {
   userId: string;
@@ -41,7 +42,7 @@ const smooth = (): ScrollBehavior =>
 
 export default function TeamChatPage() {
   const { id } = useParams<{ id: string }>();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const { me, loading } = useMe();
   const [team, setTeam] = useState<TeamState | null>(null);
@@ -282,7 +283,7 @@ export default function TeamChatPage() {
                 ))}
               </div>
               <div className="mono mt-1 text-[10px] tracking-wider text-muted">
-                {roster.map((m) => `${m.name}//${m.role}`).join("  ")}
+                {roster.map((m) => `${m.name}//${roleDisplay(locale, m.role)}`).join("  ")}
               </div>
             </div>
             <Link href="/teams" className="btn btn-outline px-3 py-1.5 text-xs">
@@ -315,7 +316,7 @@ export default function TeamChatPage() {
                     {isMe
                       ? t("tc.you")
                       : sender
-                        ? `${sender.name} // ${sender.role}`
+                        ? `${sender.name} // ${roleDisplay(locale, sender.role)}`
                         : t("b.team.unknownSender")}
                   </div>
                   <div

@@ -8,6 +8,7 @@ import ScoreRing from "@/components/ScoreRing";
 import { IconUsers, IconArrowRight } from "@/components/Icons";
 import { api, useMe, useUserBus } from "@/lib/client";
 import { apiErrorMessage, useI18n } from "@/lib/i18n";
+import { roleDisplay } from "@/lib/content";
 import type { TeamReport } from "@/lib/types";
 import type { Locale } from "@/lib/i18n-dict";
 
@@ -274,7 +275,7 @@ export default function TeamsPage() {
                         )}
                       </span>
                       <span className="mono block text-[10px] tracking-wider text-muted">
-                        {m.role}
+                        {roleDisplay(locale, m.role)}
                         {m.isBot ? " // SIM" : ""}
                       </span>
                       {/* 組隊同意狀態：模擬隊友視為已同意；真人要自己按「加入這隊」 */}

@@ -7,6 +7,7 @@ import AppHeader from "@/components/AppHeader";
 import ScoreRing from "@/components/ScoreRing";
 import { api, apiErrorText, useMe, useUserBus } from "@/lib/client";
 import { useI18n } from "@/lib/i18n";
+import { roleDisplay } from "@/lib/content";
 import { shareCardPng } from "@/lib/card";
 import type { IcebreakerCard } from "@/lib/types";
 
@@ -41,7 +42,7 @@ interface Conn {
 
 export default function PeoplePage() {
   const { me, loading } = useMe();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const [people, setPeople] = useState<Person[] | null>(null);
   const [cards, setCards] = useState<Record<string, IcebreakerCard>>({});
@@ -164,7 +165,7 @@ export default function PeoplePage() {
         {
           name: p.name,
           emoji: p.emoji,
-          role: p.role,
+          role: roleDisplay(locale, p.role),
           score: p.score,
           shared: card.shared,
           complement: card.complement,
@@ -278,7 +279,7 @@ export default function PeoplePage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-display font-black">{p.name}</span>
                     <span className="mono border border-line-strong px-1.5 py-0.5 text-[10px] tracking-wider">
-                      {p.role}
+                      {roleDisplay(locale, p.role)}
                     </span>
                     {p.band === "watch" ? (
                       <span
