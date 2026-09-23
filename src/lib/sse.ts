@@ -151,3 +151,75 @@ export function sseResponse(
     },
   });
 }
+
+/** 聊天串流輪詢 DB 的間隔 */
+export const MESSAGE_POLL_MS = 3000;
+/** 每次輪詢往回看多久（涵蓋「先取 createdAt、晚一點才 commit」與多實例間的時鐘誤差） */
+const MESSAGE_LOOKBACK_MS = 10_000;
+
+type Row = { id: string; createdAt: Date | string };
+
+/**
+ * 聊天串流（隊伍群聊、私訊）的訊息補送：即時訊息走行程內 bus；另外每 MESSAGE_POLL_MS 輪詢 DB，
+ * 把 bus 沒送到的訊息補上（訂閱前的空窗、多實例部署時 bus 不相通）。以訊息 id 去重，同一則只送一次。
+ *
+ * - initial：init 事件已送出的訊息（標成已送）
+ * - fetchSince(since)：讀 createdAt ≥ since 的訊息（依 createdAt 升冪；欄位要和 bus 發的 message 相同）
+ * - onNew(row)：送出一則新訊息（bus 或輪詢都走這裡）
+ * 回傳 offer(row)：bus 收到 message 時呼叫；沒送過才會轉給 onNew。
+ * 串流關閉（ctx.onClose）時自動停止輪詢。
+ */
+export function pollMessages<T extends Row>(
+  ctx: Pick<SseContext, "onClose">,
+  opts: {
+    initial: T[];
+    fetchSince: (since: Date) => Promise<T[]>;
+    onNew: (row: T) => void;
+  },
+): (row: T) => void {
+  const ms = (r: Row) => new Date(r.createdAt).getTime();
+  /** 已送出的 id → createdAt（ms）；只留 lookback 視窗內的，避免長聊天室的 Set 無限長大 */
+  const sent = new Map<string, number>();
+  let cursor = Date.now();
+  let stopped = false;
+
+  const prune = () => {
+    const floor = cursor - 2 * MESSAGE_LOOKBACK_MS;
+    for (const [id, t] of sent) if (t < floor) sent.delete(id);
+  };
+  const offer = (row: T) => {
+    if (stopped || sent.has(row.id)) return;
+    const t = ms(row);
+    sent.set(row.id, Number.isFinite(t) ? t : Date.now());
+    if (Number.isFinite(t) && t > cursor) cursor = t;
+    opts.onNew(row);
+  };
+
+  for (const row of opts.initial) {
+    const t = ms(row);
+    sent.set(row.id, Number.isFinite(t) ? t : Date.now());
+    if (Number.isFinite(t) && t > cursor) cursor = t;
+  }
+  prune();
+
+  let polling = false;
+  const timer = setInterval(() => {
+    if (stopped || polling) return;
+    polling = true;
+    opts
+      .fetchSince(new Date(cursor - MESSAGE_LOOKBACK_MS))
+      .then((rows) => {
+        for (const row of rows) offer(row);
+        prune();
+      })
+      .catch((e) => console.warn("message stream poll failed", e))
+      .finally(() => {
+        polling = false;
+      });
+  }, MESSAGE_POLL_MS);
+  ctx.onClose(() => {
+    stopped = true;
+    clearInterval(timer);
+  });
+  return offer;
+}

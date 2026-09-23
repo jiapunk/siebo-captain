@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * 同一 run、同一觀看者只生成一次：已有就重用；生成中的並發請求共用同一次 LLM 呼叫（不重複記帳）。
  */
 export const POST = route(
-  async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
     const uid = await getCurrentUserId();
     if (!uid) return apiError(401, "unauthorized");
     const { id: otherId } = await ctx.params;
@@ -67,7 +67,7 @@ export const POST = route(
       if (again)
         return { card: again.content as unknown as IcebreakerCard, cached: true };
 
-      throttle("icebreaker", uid);
+      throttle("icebreaker", uid, req);
 
       const [me, other] = await Promise.all([
         prisma.user.findUnique({ where: { id: uid }, include: { profile: true } }),

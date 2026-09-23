@@ -1,4 +1,5 @@
 import type { HackathonProfile, VisibilityMap } from "./types";
+import type { GithubVerification } from "./github";
 
 export type PublicProfile = HackathonProfile; // 隱藏欄位以「未公開」呈現
 
@@ -38,9 +39,51 @@ function cleanList(v: unknown): string[] {
     .slice(0, MAX_LIST);
 }
 
+// ---- GitHub 驗證：只信任伺服器注入的那一份 ----
+// compiled 裡的 github 可能來自舊資料、請求本文或 LLM 輸出（訪談答案可 prompt injection），一律不可信。
+// 唯一合法來源是 AgentProfile.verification（只有 /api/profile/verify/github 會寫），經 withVerification 注入。
+// 注入的物件登記在 WeakSet：同一行程內一路傳遞（publicProfile、mock/real 再 sanitize）引用不變所以保留；
+// 任何經 JSON 反序列化而來（DB compiled、LLM、請求本文）的 github 都不在登記內 → sanitizeProfile 丟掉。
+const gt = globalThis as unknown as { __trustedGithub?: WeakSet<object> };
+const TRUSTED_GITHUB: WeakSet<object> = gt.__trustedGithub ?? (gt.__trustedGithub = new WeakSet());
+
+/**
+ * 以伺服器的 verification row 設定 github（沒有或形狀不對 → 刪除 github）。
+ * 這是 github 進入引擎的唯一入口。
+ */
+export function withVerification(
+  profile: HackathonProfile,
+  verification: unknown,
+): HackathonProfile {
+  const out: HackathonProfile = { ...profile };
+  delete out.github;
+  const v = verification as Partial<GithubVerification> | null | undefined;
+  if (
+    !v ||
+    typeof v !== "object" ||
+    typeof v.publicRepos !== "number" ||
+    !Array.isArray(v.topLanguages)
+  )
+    return out;
+  const gh = {
+    ...v,
+    topLanguages: v.topLanguages.filter(
+      (t) => t && typeof t.lang === "string" && typeof t.count === "number",
+    ),
+  } as GithubVerification;
+  TRUSTED_GITHUB.add(gh);
+  out.github = gh;
+  return out;
+}
+
+/** 從 DB 讀出的 AgentProfile（compiled + verification）組成引擎用的檔案：compiled.github 一律忽略 */
+export function profileFromRow(compiled: unknown, verification: unknown): HackathonProfile {
+  return withVerification(sanitizeProfile(compiled), verification);
+}
+
 /**
  * 把任意來源的 compiled 收斂成型別正確、有長度上限的 HackathonProfile。
- * 缺欄位補空字串／空陣列；github 驗證結果（伺服器注入）原樣保留。
+ * 缺欄位補空字串／空陣列；github 只保留 withVerification 注入的那一份，其他來源一律丟掉。
  */
 export function sanitizeProfile(raw: unknown): HackathonProfile {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -56,7 +99,7 @@ export function sanitizeProfile(raw: unknown): HackathonProfile {
     dealbreakers: cleanList(r.dealbreakers),
     bio: cleanText(r.bio, MAX_BIO),
   };
-  if (r.github && typeof r.github === "object")
+  if (r.github && typeof r.github === "object" && TRUSTED_GITHUB.has(r.github))
     out.github = r.github as HackathonProfile["github"];
   return out;
 }

@@ -7,6 +7,7 @@ import {
 } from "../src/lib/personas";
 import { HACK_VISIBILITY } from "../src/lib/types";
 import { absoluteDatabaseUrl } from "./db-path";
+import { ORPHAN_RULES, orphanDeleteSql } from "./orphans";
 
 /**
  * 種子資料（冪等）：重建活動場次，種子使用者（seed- 開頭）以 upsert 重設檔案。
@@ -84,16 +85,8 @@ async function main() {
       });
       await tx.connection.deleteMany({ where: { userAId: isSeed, userBId: isSeed } }); // ConnectMessage 串聯刪除
       await tx.ledgerEvent.deleteMany({ where: { userId: isSeed } });
-      // runId 沒有 FK：順手清掉指向已不存在互盤的孤兒資料
-      for (const table of ["SwarmPart", "Icebreaker", "SoloBaseline"]) {
-        await tx.$executeRawUnsafe(
-          `DELETE FROM "${table}" WHERE "runId" IS NOT NULL AND "runId" NOT IN (SELECT "id" FROM "MatchRun")`,
-        );
-      }
-      // 組隊假設 Part（teamId = h:<ownerId>）的 owner 已被刪除者
-      await tx.$executeRawUnsafe(
-        `DELETE FROM "SwarmPart" WHERE "runId" IS NULL AND "teamId" LIKE 'h:%' AND substr("teamId", 3) NOT IN (SELECT "id" FROM "User")`,
-      );
+      // runId／teamId 沒有 FK：順手清掉指向已不存在互盤或 owner 的孤兒資料（規則見 prisma/orphans.ts）
+      for (const rule of ORPHAN_RULES) await tx.$executeRawUnsafe(orphanDeleteSql(rule));
 
       // 已不在 personas 名單裡的舊種子使用者
       await tx.user.deleteMany({ where: { id: { startsWith: SEED_PREFIX, notIn: personaIds } } });

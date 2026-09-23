@@ -1,6 +1,6 @@
 import { prisma } from "./db";
-import type { HackathonProfile, MatchReport, RunEvent, VisibilityMap } from "./types";
-import { publicProfile, sanitizeProfile } from "./profile";
+import type { MatchReport, RunEvent, VisibilityMap } from "./types";
+import { profileFromRow, publicProfile } from "./profile";
 import { LLM_MODE } from "./llm";
 import { withMeter, type CallMeter } from "./llm/meter";
 import * as real from "./llm/real";
@@ -222,13 +222,14 @@ export async function runSoloBaseline(
   if (cached && !opts?.force) {
     solo = normalizeSolo((cached.result as unknown as { metric: SideMetrics }).metric);
   } else {
-    // 與蜂群同一套分享權限：雙方都只用投影後的檔案
+    // 與蜂群同一套分享權限與 GitHub 驗證來源（matching.loadProfile）：
+    // compiled.github 一律忽略、只注入 verification row，雙方都只用投影後的檔案
     const self = publicProfile(
-      sanitizeProfile(a.profile.compiled) as HackathonProfile,
+      profileFromRow(a.profile.compiled, a.profile.verification),
       (a.profile.visibility as VisibilityMap) ?? null,
     );
     const other = publicProfile(
-      sanitizeProfile(b.profile.compiled) as HackathonProfile,
+      profileFromRow(b.profile.compiled, b.profile.verification),
       (b.profile.visibility as VisibilityMap) ?? null,
     );
     const qa = qaTextFromEvents(run.events);

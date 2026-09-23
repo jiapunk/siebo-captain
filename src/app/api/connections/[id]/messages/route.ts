@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
 import { emailGate } from "@/lib/gate";
@@ -10,13 +10,15 @@ import { throttle } from "@/lib/costGuard";
 import { apiError, readJson, route, str } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
+/** 回應後的模擬對象回覆（after）也算在這個時限內 */
+export const maxDuration = 60;
 
 /** 私訊單則上限（超過截斷） */
 const MAX_MESSAGE = 2000;
 
 /**
  * 私訊：只有 connected 的聯絡能傳（requested → 423 locked）。
- * 對象是模擬對象時會觸發一次 LLM 回覆 → 每人 30 則 / 分鐘（429 rate_limited）。
+ * 對象是模擬對象時會觸發一次 LLM 回覆 → 每人 30 則 / 分鐘，另有每來源／全站預算（429 rate_limited）。
  */
 export const POST = route(
   async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -35,7 +37,7 @@ export const POST = route(
       return apiError(404, "not found");
     if (conn.status !== "connected") return apiError(423, "locked");
 
-    throttle("chat", uid);
+    throttle("chat", uid, req);
 
     const msg = await prisma.connectMessage.create({
       data: { connectionId: id, senderId: uid, content: content.slice(0, MAX_MESSAGE) },
@@ -51,7 +53,8 @@ export const POST = route(
 
     if (other?.isBot) {
       const locale = await getServerLocale();
-      scheduleConnectReply(id, uid, locale);
+      // after()：回應先送出，回覆在背景跑；平台與 graceful shutdown 會等它完成
+      after(() => scheduleConnectReply(id, uid, locale));
     }
 
     return NextResponse.json({ message: msg });

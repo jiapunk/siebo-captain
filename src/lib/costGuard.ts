@@ -1,12 +1,18 @@
 import { prisma } from "./db";
 import { publish } from "./bus";
-import { rateLimit } from "./rateLimit";
+import { clientKey, rateLimit } from "./rateLimit";
 import { HttpError } from "./http";
 
 /**
  * 成本與濫用防護（會呼叫 LLM / Jev 的路由共用）。
  *
- * - throttle()：每人／每 run 節流，超過 → 429 rate_limited（附 retryAfterSec 與 Retry-After）
+ * - throttle()：三層節流，任一層超過 → 429 rate_limited（附 retryAfterSec、scope 與 Retry-After）
+ *     1. 每人／每 run（LIMITS）
+ *     2. 每來源（SHARED_LIMITS.source，key = clientKey(req)；只在 TRUST_PROXY=1 能分出 IP 時生效，
+ *        直連時所有人本來就同一桶，交給第 3 層）
+ *     3. 全站合計（SHARED_LIMITS.global）：示範身分可以一直開新的，每人額度擋不住總量，這層把 LLM 呼叫總量封頂
+ *   共用層先「只看不記」，全部通過才記帳：被擋的請求不會吃掉別人的共用額度。
+ *   COST_BUDGET_SCALE=<倍數> 可整體放大／縮小第 2、3 層；COST_BUDGET_SCALE=off 關掉第 2、3 層（每人額度仍在）。
  * - tryLock()：同一件事同時只跑一次（in-flight 鎖），被占用 → 呼叫端回 409
  * - singleFlight()：同 key 的並發請求共用同一個 Promise（不重複呼叫 LLM、不重複記帳）
  * - reapStaleRuns()：把超過 10 分鐘仍 running 的 run 標成 failed（行程重啟／背景工作崩潰留下的殘骸）
@@ -38,6 +44,26 @@ export const LIMITS = {
 
 export type LimitName = keyof typeof LIMITS;
 
+type Rule = readonly [number, number];
+
+/**
+ * 會呼叫 LLM／Jev 的端點的共用預算（全部 10 分鐘視窗）：source = 每來源、global = 全站合計。
+ * 聯絡、加入活動不呼叫 LLM，只有每人額度。
+ */
+export const SHARED_LIMITS = {
+  /** 每次最多 5 場互盤 */
+  matching: { source: [60, 10 * 60_000], global: [120, 10 * 60_000] },
+  /** 每次最多 15 次隔離評估 */
+  assemble: { source: [60, 10 * 60_000], global: [120, 10 * 60_000] },
+  /** 只算真正重跑單體 baseline 的請求 */
+  compare: { source: [60, 10 * 60_000], global: [120, 10 * 60_000] },
+  onboardingMessage: { source: [400, 10 * 60_000], global: [800, 10 * 60_000] },
+  onboardingCompile: { source: [60, 10 * 60_000], global: [120, 10 * 60_000] },
+  icebreaker: { source: [200, 10 * 60_000], global: [400, 10 * 60_000] },
+  /** 只在對話裡有模擬隊友（會觸發 LLM 回覆）時才有意義，但一律計入 */
+  chat: { source: [400, 10 * 60_000], global: [800, 10 * 60_000] },
+} as const satisfies Partial<Record<LimitName, { source: Rule; global: Rule }>>;
+
 /** 超過 run 的合理執行時間仍是 running → 視為卡死 */
 export const STALE_RUN_MS = 10 * 60_000;
 
@@ -45,18 +71,102 @@ type GuardState = {
   locks: Map<string, number>;
   flights: Map<string, Promise<unknown>>;
   lastReap: number;
+  /** 共用預算的滑動窗（key → 命中時間戳，舊到新） */
+  budgets?: Map<string, number[]>;
+  lastBudgetSweep?: number;
 };
 const g = globalThis as unknown as { __sd_costGuard?: GuardState };
 const state: GuardState =
   g.__sd_costGuard ??
   (g.__sd_costGuard = { locks: new Map(), flights: new Map(), lastReap: 0 });
+// dev HMR：舊版 state 沒有 budgets 欄位
+const budgets: Map<string, number[]> = (state.budgets ??= new Map());
 
-/** 節流：超過額度直接丟 429 rate_limited（由 http.ts 的 route() 轉成回應） */
-export function throttle(name: LimitName, key: string): void {
+/** 共用預算最多追蹤幾個 key（TRUST_PROXY=1 時每個 IP 一個）；超過從最久沒動的開始丟 */
+const MAX_BUDGET_KEYS = 10_000;
+const BUDGET_SWEEP_MS = 60_000;
+
+/** COST_BUDGET_SCALE：未設 → 1；off → 關閉共用層；正數 → 倍數；其他值 → 1 */
+function budgetScale(): number | null {
+  const raw = process.env.COST_BUDGET_SCALE?.trim().toLowerCase();
+  if (!raw) return 1;
+  if (raw === "off") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function sweepBudgets(now: number) {
+  for (const [k, hits] of budgets) {
+    const newest = hits[hits.length - 1];
+    // 所有共用視窗都是 10 分鐘
+    if (newest === undefined || now - newest >= 10 * 60_000) budgets.delete(k);
+  }
+  if (budgets.size > MAX_BUDGET_KEYS) {
+    let excess = budgets.size - MAX_BUDGET_KEYS;
+    for (const k of budgets.keys()) {
+      if (excess-- <= 0) break;
+      budgets.delete(k);
+    }
+  }
+  state.lastBudgetSweep = now;
+}
+
+/**
+ * 節流：超過額度直接丟 429 rate_limited（由 http.ts 的 route() 轉成回應）。
+ * - key：每人／每 run 的鍵（通常是 uid）
+ * - req：有給才會套用「每來源」預算；「全站」預算不需要 req，一律套用
+ * 429 回應附 scope："user"（每人／每 run）、"source"（每來源）、"global"（全站）。
+ */
+export function throttle(name: LimitName, key: string, req?: Request): void {
+  const now = Date.now();
+
+  // 1) 共用層：只看不記（被擋時不消耗任何額度）
+  const buckets = sharedBuckets(name, req);
+  const pending: Array<[string, number[]]> = [];
+  for (const b of buckets) {
+    const hits = (budgets.get(b.key) ?? []).filter((t) => now - t < b.windowMs);
+    if (hits.length >= b.limit) {
+      budgets.set(b.key, hits);
+      const retryAfterSec = Math.max(1, Math.ceil((b.windowMs - (now - hits[0])) / 1000));
+      throw new HttpError(429, "rate_limited", { retryAfterSec, scope: b.scope });
+    }
+    pending.push([b.key, hits]);
+  }
+
+  // 2) 每人／每 run（通過才會記一次）
   const [limit, windowMs] = LIMITS[name];
   const rl = rateLimit(`cost:${name}:${key}`, limit, windowMs);
   if (!rl.ok)
-    throw new HttpError(429, "rate_limited", { retryAfterSec: rl.retryAfterSec });
+    throw new HttpError(429, "rate_limited", {
+      retryAfterSec: rl.retryAfterSec,
+      scope: "user",
+    });
+
+  // 3) 全部通過 → 共用層記帳（delete + set：活躍的 key 移到尾端，超量清除時先丟最久沒動的）
+  for (const [k, hits] of pending) {
+    hits.push(now);
+    budgets.delete(k);
+    budgets.set(k, hits);
+  }
+}
+
+type Bucket = { key: string; limit: number; windowMs: number; scope: "source" | "global" };
+
+/** 這次請求要檢查的共用桶（沒有共用預算、或 COST_BUDGET_SCALE=off → 空陣列） */
+function sharedBuckets(name: LimitName, req?: Request): Bucket[] {
+  const shared = (SHARED_LIMITS as Partial<Record<LimitName, { source: Rule; global: Rule }>>)[name];
+  const scale = budgetScale();
+  if (!shared || scale === null) return [];
+  const now = Date.now();
+  if (now - (state.lastBudgetSweep ?? 0) > BUDGET_SWEEP_MS) sweepBudgets(now);
+  const scaled = ([n, w]: Rule) => ({ limit: Math.max(1, Math.floor(n * scale)), windowMs: w });
+  const out: Bucket[] = [];
+  // 直連時 clientKey 一律是 "direct"（大家同一桶），等同全站層，不重複計
+  const src = req ? clientKey(req) : "direct";
+  if (src !== "direct")
+    out.push({ key: `src:${name}:${src}`, scope: "source", ...scaled(shared.source) });
+  out.push({ key: `global:${name}`, scope: "global", ...scaled(shared.global) });
+  return out;
 }
 
 /**

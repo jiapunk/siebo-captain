@@ -14,6 +14,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:rebaseline": "tsx scripts/db-rebaseline.ts",
+    "db:prune-orphans": "tsx scripts/db-prune-orphans.ts --allow-dev-db",
+    "secret-scan": "node scripts/secret-scan.mjs",
     "demo:reset": "tsx prisma/reset-demo.ts --allow-dev-db",
     "demo:snapshot": "tsx scripts/demo-snapshot.ts",
     "demo:restore": "tsx scripts/demo-restore.ts",

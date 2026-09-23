@@ -3,6 +3,8 @@ import { sseResponse } from "@/lib/sse";
 import { subscribe } from "@/lib/bus";
 
 export const dynamic = "force-dynamic";
+/** 長連線：平台到時限會切斷，EventSource 會自動重連 */
+export const maxDuration = 300;
 
 /** 訂閱當前用戶的個人事件頻道（配對狀態變更 → 前端刷新） */
 export async function GET(req: Request) {

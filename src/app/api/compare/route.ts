@@ -44,7 +44,7 @@ export const GET = route(async (req: Request) => {
 /**
  * POST { runId, force? } → 跑一次單體 baseline（1 次 LLM 呼叫）並回傳對照。
  * - 已有 baseline 且沒帶 force：直接用快取（不呼叫 LLM、不計次）
- * - 真的要呼叫 LLM：每個 run 每分鐘最多 1 次（429 rate_limited）；同一 run 並發請求共用同一次計算
+ * - 真的要呼叫 LLM：每個 run 每分鐘最多 1 次，另有每來源／全站預算（429 rate_limited）；同一 run 並發請求共用同一次計算
  */
 export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
@@ -70,7 +70,7 @@ export const POST = route(async (req: Request) => {
     if (hasBaseline && !force) {
       cmp = await runSoloBaseline(run.id);
     } else {
-      throttle("compare", run.id);
+      throttle("compare", run.id, req);
       cmp = await singleFlight(flightKey, () => runSoloBaseline(run.id, { force }));
     }
   }

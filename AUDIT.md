@@ -171,11 +171,11 @@
 7. **没有 SMTP**：Email 验证靠 `AUTH_DEV_LINKS=on` 把链接放在响应里；密码重设链接默认不回传，正式环境目前无法自助重设密码
 8. **注册仍会回 409 `email_taken`**：可借此得知 email 是否已注册（已节流）
 9. **未验证 email 的用户仍可能被别人的队长选为互盘候选**（闸门只挡他自己发起的动作）
-10. **隐私告知**：新访谈开始前会显示数据去向说明，勾选同意后才开始（`/onboarding`）；同意只在前端把关，服务器没有记录同意时间，也不会拦截未经此页直接调用 API 的请求
+10. **隐私告知只在前端把关**：新访谈开始前（`/onboarding`）显示告知卡——回答会送到第三方 AI 服务处理、服务器可能在用户所在地区以外、分享权限挡不住 AI 服务处理、可随时删除账号——勾选同意后才开始；已有回答的访谈不再显示。服务器没有记录同意时间，也不会拦截未经此页直接调用 `/api/onboarding/message` 的请求。访谈与档案编译送往 LLM 供应商的请求头 `x-opencode-session` 仍是 userId（见 §6 数据流表）
 11. **EvoMap**：资产待审核（candidate / quarantine），平台对自包含 validation 标记 `validation_status: noop`；v1 无法公开验证；v2 的 `execution_trace` 与 `success_streak` 是旧产生器的常数，修正后的产生器尚未重新发布
 12. **lint**：`react-hooks/set-state-in-effect` 已恢复为 error，全仓 0 error / 0 warning（旧版曾降为 warn 并有 11 个 warning）
 13. **活动时间依赖 `.env`**（`EVENT_STARTS_AT` / `EVENT_ENDS_AT`）；变更后需 `npm run db:seed`（格式错误会在动数据前中止）
-14. **`shots/` 是历史截图**：部分画面来自拆分前的约会版或旧活动名称，不代表本产品现况；测试截图写到 `test-results/`，不再覆写 `shots/`
+14. **`shots/` 是静态展示截图**：拍摄于不同时间点，多数早于修正版，细节可能与现况不同（例如部分画面显示当时的 `MODE`、数值与文案）。拆分前约会版的 7 张画面已移除，`23-en-landing.png`、`25-cn-landing.png` 已用修正版（EvoTavern、mock 模式）重拍；git 历史中的旧版截图仍在。测试截图写到 `test-results/`，不再覆写 `shots/`
 
 ---
 

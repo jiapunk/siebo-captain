@@ -261,7 +261,7 @@ export default function ComparePage() {
             {solo ? (
               <SideCard
                 title={t("cmp.solo")}
-                subtitle={t("cmp.soloSub", { src: upper(solo.source) })}
+                subtitle={t("cmp.soloSub", { n: solo.calls, src: upper(solo.source) })}
                 metric={solo}
                 verdict={verdictText(solo.verdict)}
               />

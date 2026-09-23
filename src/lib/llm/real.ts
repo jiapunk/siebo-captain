@@ -264,6 +264,7 @@ export async function realCompileProfile(
     sessionId,
     locale,
     (raw) => {
+      // sanitizeProfile 會丟掉 LLM 輸出的 github（訪談答案可 prompt injection 偽造驗證；見 profile.withVerification）
       const p = sanitizeProfile(obj(raw));
       if (!p.role) throw new LlmShapeError("role");
       return p;

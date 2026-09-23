@@ -4,6 +4,8 @@ import { ensureReaped } from "@/lib/costGuard";
 import { runsStream } from "../../runStream";
 
 export const dynamic = "force-dynamic";
+/** 長連線：平台到時限會切斷；用戶端會重連，伺服器重送歷史、以 (runId, seq) 去重 */
+export const maxDuration = 300;
 
 /**
  * 單一 run 的逐字稿串流（舊路由，保留相容）。

@@ -1,41 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
-import { LOCALES } from "../src/lib/i18n-dict";
-import { enterAsDemo, launchAndWait, resetDemo, shotPath } from "./helpers";
+import {
+  CJK_RE,
+  enterAsDemo,
+  launchAndWait,
+  offenders,
+  resetDemo,
+  shotPath,
+  TRAD_RE,
+  uiText,
+} from "./helpers";
 
 test.beforeAll(() => {
   resetDemo();
 });
-
-/**
- * 繁體專用字（簡體寫法不同）：简中模式下 UI 出現任何一個就是繁中殘留。
- * 已核對：這些字都不出現在 i18n-dict 的 cn 字典裡；人名常用的滿／綠／飛／歐／吳刻意不列（人名另外剔除）。
- */
-const TRAD_ONLY =
-  "體對單隊長執報維數據與這個們會時間應開關點選擇資訊變讓說請認證網聯發現過還進運動優勢態雙邊義價質實際較準確結構績計論總費歷紀錄類處顯測試從來為東車門問題無專業習學覺視設語話讀寫聽難錯誤條規則標參備註項圍場層級狀連線斷獲評審員組織團賽環節階隱輸載儲檔刪編輯複製導覽頁觸樣預啟異號傳廣頻圖統協風譜興觀溝鐘遲積欄韌兩鈕盤揮擊離驗碼帳戶冊訪談達絡側麼嗎屬於後裡並將當衝夥臉詳細閱擁簡歸";
-const TRAD_RE = new RegExp(`[${TRAD_ONLY}]`, "gu");
-/** 漢字、假名與全形標點（EN 模式下都不該出現在 UI 上） */
-const CJK_RE = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff01-\uff60]/gu;
-
-/** 取頁面文字並剔除「資料」：使用者名稱、語系切換鈕的原生語言名稱 */
-async function uiText(page: Page, names: string[]): Promise<string> {
-  let text = await page.locator("body").innerText();
-  const strip = [...names, ...LOCALES.map((l) => l.label)]
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
-  for (const s of strip) text = text.split(s).join(" ");
-  return text;
-}
-
-/** 列出命中的字與前後文，失敗訊息直接指出殘留在哪 */
-function offenders(text: string, re: RegExp): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(re)) {
-    const i = m.index ?? 0;
-    out.push(`「${m[0]}」…${text.slice(Math.max(0, i - 8), i + 8).replace(/\s+/g, " ")}…`);
-    if (out.length >= 15) break;
-  }
-  return out;
-}
 
 async function openCompare(page: Page) {
   const loaded = page.waitForResponse(

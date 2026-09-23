@@ -5,7 +5,8 @@
  *
  * 範圍：common.*、time.*（client.tsx timeAgo）、err.*（client.tsx apiErrorText 的通用錯誤碼）、
  * agent.*／rs.*（/agent、RunStream）、radar.*（/people）、cmp.*（/compare）。
- * 覆蓋主字典：radar.footer（改成雙方門檻的說法）。
+ * 覆蓋主字典：radar.footer（改成雙方門檻的說法）、agent.launchErrNone（候選會輪替重評，
+ *   no_candidates 只在其他人都在互盤中／已成隊／沒檔案時出現，不是「都見過一輪」）。
  */
 import type { Locale } from "./i18n-dict";
 
@@ -64,6 +65,9 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "agent.partAB": "對方隊長作答",
     "agent.partRA": "我的隊長評估",
     "agent.partRB": "對方隊長評估",
+    "agent.reevalNote":
+      "這次出發的 {total} 場裡有 {n} 場是重新評估先前互盤過的對象（大家都見過一輪後，最久沒盤的先輪到）；雷達與組隊只採用每位對象最新一次的結果。",
+    "agent.launchErrNone": "目前沒有可派出的對象——其他參賽者都正在互盤中、已與你成隊，或還沒建好檔案。",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -87,18 +91,18 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.tag": "單體 vs 蜂群",
     "cmp.title": "單體 vs 蜂群對照",
     "cmp.desc":
-      "同一場對盤紀錄：蜂群＝6 個隔離 Part＋決策層（可重試）；單體＝沿用蜂群已生成的同一份逐字稿，只用一次呼叫直接產出報告（無隔離、無法重試）。",
+      "同一場對盤紀錄：蜂群＝6 個隔離 Part＋決策層（可重試）；單體＝沿用蜂群已生成的同一份逐字稿，用單一提示直接產出報告——沒有 Part 隔離，只有呼叫層級的重試（真實模型最多重試 1 次，mock 不重試）。",
     "cmp.pick": "選擇一場已完成的對盤",
     "cmp.none": "尚無完成的對盤——先到指揮台派隊長出擊",
     "cmp.soloBusy": "單體報告生成中…",
     "cmp.soloRerun": "重新執行單體對照",
-    "cmp.soloRun": "執行單體對照（1 次呼叫）",
+    "cmp.soloRun": "執行單體對照",
     "cmp.viewerB":
       "這場是對方發起的：對照顯示的是對方隊長（A 方）視角的評估，不是你的隊長給的分數。",
     "cmp.swarm": "蜂群",
     "cmp.swarmSub": "{done}/{expected} Part · 決策層 {src}",
     "cmp.solo": "單體",
-    "cmp.soloSub": "1 次呼叫 · {src}",
+    "cmp.soloSub": "{n} 次呼叫 · {src}",
     "cmp.soloMissing": "尚未執行單體 baseline",
     "cmp.soloMissingHint": "（按上方按鈕跑一次）",
     "cmp.table": "取捨對照表",
@@ -107,7 +111,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.providerNote": "兩側評分的 provider 不同（{a} vs {b}），分數差異也反映模型差異。",
     "cmp.metric": "指標",
     "cmp.colSwarm": "蜂群 6-Part",
-    "cmp.colSolo": "單體 1-Call",
+    "cmp.colSolo": "單體 1-Prompt",
     "cmp.rowScoring": "評分步驟耗時（可比）",
     "cmp.rowScoringSource": "評分 provider",
     "cmp.rowScoringCalls": "評分嘗試次數（可比）",
@@ -199,6 +203,9 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "agent.partAB": "对方队长作答",
     "agent.partRA": "我的队长评估",
     "agent.partRB": "对方队长评估",
+    "agent.reevalNote":
+      "这次出发的 {total} 场里有 {n} 场是重新评估之前对盘过的对象（大家都见过一轮后，最久没盘的先轮到）；雷达与组队只采用每位对象最新一次的结果。",
+    "agent.launchErrNone": "目前没有可派出的对象——其他参赛者都正在对盘中、已与你成队，或还没建好文件。",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -222,18 +229,18 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.tag": "单体 vs 蜂群",
     "cmp.title": "单体 vs 蜂群对比",
     "cmp.desc":
-      "同一场对盘纪录：蜂群＝6 个隔离 Part＋决策层（可重试）；单体＝沿用蜂群已生成的同一份逐字稿，只用一次调用直接产出报告（无隔离、无法重试）。",
+      "同一场对盘纪录：蜂群＝6 个隔离 Part＋决策层（可重试）；单体＝沿用蜂群已生成的同一份逐字稿，用单一提示直接产出报告——没有 Part 隔离，只有调用层级的重试（真实模型最多重试 1 次，mock 不重试）。",
     "cmp.pick": "选择一场已完成的对盘",
     "cmp.none": "尚无完成的对盘——先到指挥台派队长出击",
     "cmp.soloBusy": "单体报告生成中…",
     "cmp.soloRerun": "重新执行单体对比",
-    "cmp.soloRun": "执行单体对比（1 次调用）",
+    "cmp.soloRun": "执行单体对比",
     "cmp.viewerB":
       "这场是对方发起的：对比显示的是对方队长（A 方）视角的评估，不是你的队长给的分数。",
     "cmp.swarm": "蜂群",
     "cmp.swarmSub": "{done}/{expected} Part · 决策层 {src}",
     "cmp.solo": "单体",
-    "cmp.soloSub": "1 次调用 · {src}",
+    "cmp.soloSub": "{n} 次调用 · {src}",
     "cmp.soloMissing": "尚未执行单体 baseline",
     "cmp.soloMissingHint": "（按上方按钮跑一次）",
     "cmp.table": "取舍对照表",
@@ -242,7 +249,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.providerNote": "两侧评分的 provider 不同（{a} vs {b}），分数差异也反映模型差异。",
     "cmp.metric": "指标",
     "cmp.colSwarm": "蜂群 6-Part",
-    "cmp.colSolo": "单体 1-Call",
+    "cmp.colSolo": "单体 1-Prompt",
     "cmp.rowScoring": "评分步骤耗时（可比）",
     "cmp.rowScoringSource": "评分 provider",
     "cmp.rowScoringCalls": "评分尝试次数（可比）",
@@ -340,6 +347,10 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "agent.partAB": "Their captain answers",
     "agent.partRA": "My captain scores",
     "agent.partRB": "Their captain scores",
+    "agent.reevalNote":
+      "{n} of the {total} matches in this run re-evaluate people you have already matched with (once everyone has been met, the least recently matched go first). The radar and squad formation use only the latest result per person.",
+    "agent.launchErrNone":
+      "No one available right now — every other participant is mid-match, already on your team, or has no profile yet.",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -364,18 +375,18 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.tag": "SOLO VS SWARM",
     "cmp.title": "Solo vs Swarm",
     "cmp.desc":
-      "Same match record. Swarm = 6 isolated Parts + a decision layer (retryable). Solo = reuses the transcript the swarm already generated and writes the report in one call (no isolation, no retry).",
+      "Same match record. Swarm = 6 isolated Parts + a decision layer (retryable). Solo = reuses the transcript the swarm already generated and writes the report from a single prompt: no Part isolation, only call-level retry (at most 1 retry with a real model, none in mock).",
     "cmp.pick": "Pick a completed match",
     "cmp.none": "No completed matches yet. Send your captain out from the command page first.",
     "cmp.soloBusy": "Generating solo report…",
     "cmp.soloRerun": "Re-run solo baseline",
-    "cmp.soloRun": "Run solo baseline (1 call)",
+    "cmp.soloRun": "Run solo baseline",
     "cmp.viewerB":
       "The other side started this match, so this comparison shows their captain's (side A) assessment, not your captain's score.",
     "cmp.swarm": "Swarm",
     "cmp.swarmSub": "{done}/{expected} Parts · decision {src}",
     "cmp.solo": "Solo",
-    "cmp.soloSub": "1 call · {src}",
+    "cmp.soloSub": "calls: {n} · {src}",
     "cmp.soloMissing": "Solo baseline not run yet",
     "cmp.soloMissingHint": "(use the button above)",
     "cmp.table": "Trade-off table",
@@ -385,7 +396,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
       "The two sides scored with different providers ({a} vs {b}), so score gaps also reflect model differences.",
     "cmp.metric": "Metric",
     "cmp.colSwarm": "Swarm 6-Part",
-    "cmp.colSolo": "Solo 1-Call",
+    "cmp.colSolo": "Solo 1-Prompt",
     "cmp.rowScoring": "Scoring step time (comparable)",
     "cmp.rowScoringSource": "Scoring provider",
     "cmp.rowScoringCalls": "Scoring attempts (comparable)",
@@ -482,6 +493,10 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "agent.partAB": "相手の隊長が回答",
     "agent.partRA": "自分の隊長が評価",
     "agent.partRB": "相手の隊長が評価",
+    "agent.reevalNote":
+      "今回の {total} 件のうち {n} 件は、以前に対戦済みの相手の再評価です（全員と一巡した後は、最も前に対戦した相手から順番に回ります）。レーダーとチーム編成は、相手ごとに最新の結果だけを使います。",
+    "agent.launchErrNone":
+      "今は出撃できる相手がいません——他の参加者は全員対戦中か、すでにチームメイトか、プロフィール未作成です。",
 
     "rs.archived": "ARCHIVED",
     "rs.linkLost": "LINK LOST",
@@ -506,18 +521,18 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
     "cmp.tag": "単体 vs スウォーム",
     "cmp.title": "単体 vs スウォーム比較",
     "cmp.desc":
-      "同じ対戦記録で比較します。スウォーム＝隔離された 6 つの Part＋決定層（リトライ可）。単体＝スウォームが生成済みの同じ交信記録を使い、1 回の呼び出しでレポートを作成（隔離なし・リトライ不可）。",
+      "同じ対戦記録で比較します。スウォーム＝隔離された 6 つの Part＋決定層（リトライ可）。単体＝スウォームが生成済みの同じ交信記録を使い、1 つのプロンプトでレポートを作成（Part の隔離なし。リトライは呼び出し単位のみで、実モデルは最大 1 回、mock はなし）。",
     "cmp.pick": "完了した対戦を選択",
     "cmp.none": "完了した対戦はまだありません。先にコマンド画面から隊長を出撃させてください。",
     "cmp.soloBusy": "単体レポート生成中…",
     "cmp.soloRerun": "単体比較を再実行",
-    "cmp.soloRun": "単体比較を実行（1 回の呼び出し）",
+    "cmp.soloRun": "単体比較を実行",
     "cmp.viewerB":
       "この対戦は相手が開始したため、比較は相手の隊長（A 側）視点の評価です。あなたの隊長のスコアではありません。",
     "cmp.swarm": "スウォーム",
     "cmp.swarmSub": "{done}/{expected} Part · 決定層 {src}",
     "cmp.solo": "単体",
-    "cmp.soloSub": "1 回の呼び出し · {src}",
+    "cmp.soloSub": "呼び出し {n} 回 · {src}",
     "cmp.soloMissing": "単体 baseline は未実行",
     "cmp.soloMissingHint": "（上のボタンで実行）",
     "cmp.table": "トレードオフ表",
@@ -527,7 +542,7 @@ export const EXT_A: Record<Locale, Record<string, string>> = {
       "両側の評価 provider が異なる（{a} vs {b}）ため、スコア差にはモデルの違いも含まれます。",
     "cmp.metric": "指標",
     "cmp.colSwarm": "スウォーム 6-Part",
-    "cmp.colSolo": "単体 1-Call",
+    "cmp.colSolo": "単体 1-Prompt",
     "cmp.rowScoring": "評価ステップ時間（比較可）",
     "cmp.rowScoringSource": "評価 provider",
     "cmp.rowScoringCalls": "評価の試行回数（比較可）",

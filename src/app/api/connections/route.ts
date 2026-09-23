@@ -61,6 +61,7 @@ export const GET = route(async () => {
 /**
  * 發起保持聯絡：body { userId }
  * 回應 { id, status, direction, created }；重複發起不會產生重複資料，也不會重複記帳。
+ * - 400 invalid_user；404 not_found；403 not_same_event（雙方沒有共同活動）；409 in_progress；429 rate_limited
  */
 export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
@@ -77,6 +78,13 @@ export const POST = route(async (req: Request) => {
     select: { id: true, isBot: true },
   });
   if (!other) return apiError(404, "not_found");
+
+  // 只能聯絡同一場活動的人（模擬隊友也一樣）：沒有共同活動 → 403 not_same_event
+  const shared = await prisma.eventMember.findFirst({
+    where: { userId: uid, event: { members: { some: { userId } } } },
+    select: { id: true },
+  });
+  if (!shared) return apiError(403, "not_same_event");
 
   const pairKey = uid < userId ? `${uid}|${userId}` : `${userId}|${uid}`;
   const release = tryLock(`connect:${pairKey}`, 30_000);

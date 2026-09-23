@@ -14,9 +14,9 @@ type Turn = { role: "agent" | "user"; content: string; ts: number };
 /**
  * 把訪談編譯成結構化檔案（1 次 LLM 呼叫）。
  * - 409 in_progress：同一使用者的編譯還在跑
- * - 429 rate_limited：每人 5 次 / 10 分鐘
+ * - 429 rate_limited：每人 5 次 / 10 分鐘，另有每來源／全站預算（見 costGuard SHARED_LIMITS）
  */
-export const POST = route(async () => {
+export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
   if (!uid) return apiError(401, "unauthorized");
 
@@ -34,7 +34,7 @@ export const POST = route(async () => {
       .map((t) => t.content);
     if (answers.length < 4) return apiError(400, "interview_incomplete");
 
-    throttle("onboardingCompile", uid);
+    throttle("onboardingCompile", uid, req);
 
     const locale = await getServerLocale();
     const compiled = await llm.compileProfile(user.name, answers, uid, locale);

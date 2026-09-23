@@ -45,7 +45,8 @@ interface PartRow {
 interface RunRow {
   id: string;
   status: string;
-  other: { name: string; emoji: string; isBot: boolean };
+  /** id：對象的 userId（舊版 API 沒有這個欄位時，改用 name+emoji 當近似鍵） */
+  other: { id?: string; name: string; emoji: string; isBot: boolean };
   myReport: MatchReport | null;
   createdAt: string;
   matchId?: string | null;
@@ -56,6 +57,21 @@ interface RunRow {
 
 const sourceLabel = (s: string) => (s === "mock" ? "LOCAL" : s.toUpperCase());
 
+/** 以「對象」為單位的鍵：同一個人重跑多次互盤只算一位 */
+const peerKey = (r: RunRow) => r.other.id ?? `${r.other.name}\u0000${r.other.emoji}`;
+
+/** 每位對象只取最新一筆「已完成」的互盤（runs 依 createdAt 新→舊），與組隊／雷達的 latestRunPerPeer 同規則 */
+function latestCompletedPerPeer(runs: RunRow[]): RunRow[] {
+  const out = new Map<string, RunRow>();
+  for (const r of runs) {
+    if (r.status !== "completed") continue;
+    const k = peerKey(r);
+    const prev = out.get(k);
+    if (!prev || Date.parse(r.createdAt) > Date.parse(prev.createdAt)) out.set(k, r);
+  }
+  return [...out.values()];
+}
+
 export default function AgentPage() {
   const { me, loading } = useMe();
   const { t } = useI18n();
@@ -65,6 +81,8 @@ export default function AgentPage() {
   const [launching, setLaunching] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  /** 非錯誤的說明（例如這輪出發其實是重新評估已見過的人） */
+  const [note, setNote] = useState<string | null>(null);
   const [eventCode, setEventCode] = useState("");
   const [joinedEvent, setJoinedEvent] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
@@ -164,14 +182,21 @@ export default function AgentPage() {
   async function launch() {
     if (launching) return;
     setMsg(null);
+    setNote(null);
     setLaunching(true);
+    // 出發前已完成互盤的對象（列表只含最近 30 場，太舊的見過紀錄可能漏算）
+    const metBefore = new Set(latestCompletedPerPeer(runs).map(peerKey));
     try {
       const { runIds } = await api<{ runIds: string[] }>("/api/matching/run", {
         method: "POST",
         body: JSON.stringify({ faultInject }),
       });
-      await load();
+      const fresh = await load();
       setExpanded(new Set(runIds));
+      // 候選輪替：所有人都見過一輪後，出發會重新評估最久沒互盤的對象——明講，別讓人以為是新對象
+      const launched = new Set(runIds);
+      const reeval = fresh.filter((r) => launched.has(r.id) && metBefore.has(peerKey(r))).length;
+      if (reeval > 0) setNote(t("agent.reevalNote", { n: reeval, total: runIds.length }));
     } catch (e) {
       setMsg(
         apiErrorText(e, t, "agent.launchErr", {
@@ -205,7 +230,10 @@ export default function AgentPage() {
   const ready = me.profileStatus === "ready";
   const activeRuns = runs.filter((r) => r.status === "running");
   const doneRuns = runs.filter((r) => r.status !== "running");
-  const qualifying = doneRuns.filter((r) => (r.myReport?.score ?? 0) >= 60);
+  // 算「人」不算「場」：同一位對象重跑多次只看最新一場，人數才不會灌水
+  const qualifying = latestCompletedPerPeer(doneRuns).filter(
+    (r) => (r.myReport?.score ?? 0) >= 60,
+  );
   const canAssemble = ready && activeRuns.length === 0 && qualifying.length >= 2;
 
   return (
@@ -345,6 +373,14 @@ export default function AgentPage() {
             className="rise-in mt-3 border border-amber bg-amber-soft p-3 text-center text-sm text-ink-soft"
           >
             {msg}
+          </div>
+        )}
+        {note && (
+          <div
+            role="status"
+            className="rise-in mt-3 border border-line-strong bg-panel-2 p-3 text-center text-sm text-ink-soft"
+          >
+            {note}
           </div>
         )}
 

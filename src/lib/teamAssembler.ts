@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { publish } from "./bus";
 import { CONTENT, roleDisplay } from "./content";
 import type { Locale } from "./i18n-dict";
 import type { TeamReport, VisibilityMap } from "./types";
@@ -82,6 +83,21 @@ export function enumerateHypotheses(ownerId: string, pool: Candidate[]): Hypothe
   return out;
 }
 
+/**
+ * 同一組隊友只留最新一筆 team_eval part。
+ * 修正前的 ID 依分數順序組成，舊資料會同時有 t:o:a:b 與 t:o:b:a；讀取端（HYPOTHESES、網絡模擬）用這個去重。
+ */
+export function latestUniqueHypotheses<P extends { id: string; updatedAt: Date }>(parts: P[]): P[] {
+  const best = new Map<string, P>();
+  for (const p of parts) {
+    const [, owner, x, y] = p.id.split(":");
+    const key = x < y ? `${owner}:${x}:${y}` : `${owner}:${y}:${x}`;
+    const cur = best.get(key);
+    if (!cur || cur.updatedAt.getTime() < p.updatedAt.getTime()) best.set(key, p);
+  }
+  return [...best.values()];
+}
+
 /** 硬約束：隊伍評估分 ≥ 60、沒有角色缺口、沒有死鎖 */
 export const TEAM_SCORE_FLOOR = 60;
 export function passesHardConstraints(evalScore: number, answers: DecideAnswer[]): boolean {
@@ -121,6 +137,31 @@ export function pickNonOverlapping<
     used.add(s.hyp.b.userId);
   }
   return picked;
+}
+
+/** 提案輪替用的最小隊伍形狀（prisma Team + members + user.isBot） */
+export interface ProposalRow {
+  id: string;
+  status: string;
+  report: unknown;
+  members: { userId: string; accepted: boolean; user: { isBot: boolean } }[];
+}
+
+/**
+ * 重新組隊時要收回的「上一輪」提案：
+ * 仍是 proposed、由我發起（report.captainId；舊資料沒有此欄位 → 我是成員就算），
+ * 而且沒有其他真人已經同意（別人已表態的提案保留，不替他撤回）。
+ */
+export function staleProposalIds(teams: ProposalRow[], userId: string): string[] {
+  return teams
+    .filter((t) => {
+      if (t.status !== "proposed") return false;
+      if (!t.members.some((m) => m.userId === userId)) return false;
+      const captain = (t.report as { captainId?: unknown } | null)?.captainId;
+      if (typeof captain === "string" && captain !== userId) return false;
+      return !t.members.some((m) => m.userId !== userId && m.accepted && !m.user.isBot);
+    })
+    .map((t) => t.id);
 }
 
 /**
@@ -543,25 +584,56 @@ export async function assembleTeams(
     .filter(Boolean) as { hyp: Hypothesis; report: TeamReport }[];
 
   const picked = pickNonOverlapping(scored);
+  // 這輪沒有任何提案 → 不動上一輪的提案（路由回 409 not_enough_candidates，使用者看到的清單不變）
+  if (picked.length === 0) return [];
 
-  const teamIds: string[] = [];
-  for (const { hyp, report } of picked) {
-    const team = await prisma.team.create({
-      data: {
-        eventId,
-        status: "proposed",
-        score: report.score,
-        report: report as unknown as object,
-        members: {
-          create: [
-            { userId, role: myProfile.role, accepted: false },
-            { userId: hyp.a.userId, role: hyp.a.profile.role, accepted: false },
-            { userId: hyp.b.userId, role: hyp.b.profile.role, accepted: false },
-          ],
+  // 新提案取代我上一輪的提案（同一交易）：清單與 SELECTED 只反映最新一輪（≤3 隊、隊友不重疊）
+  const mine = await prisma.team.findMany({
+    where: { status: "proposed", members: { some: { userId } } },
+    include: { members: { include: { user: { select: { isBot: true } } } } },
+  });
+  const staleIds = staleProposalIds(mine, userId);
+
+  const teamIds = await prisma.$transaction(async (tx) => {
+    if (staleIds.length > 0)
+      await tx.team.deleteMany({
+        where: {
+          id: { in: staleIds },
+          status: "proposed",
+          // 查詢之後才有別的真人按同意的，也不收回
+          NOT: {
+            members: { some: { accepted: true, userId: { not: userId }, user: { isBot: false } } },
+          },
         },
-      },
-    });
-    teamIds.push(team.id);
-  }
+      });
+    const ids: string[] = [];
+    for (const { hyp, report } of picked) {
+      const team = await tx.team.create({
+        data: {
+          eventId,
+          status: "proposed",
+          score: report.score,
+          report: { ...report, captainId: userId } as unknown as object,
+          members: {
+            create: [
+              { userId, role: myProfile.role, accepted: false },
+              { userId: hyp.a.userId, role: hyp.a.profile.role, accepted: false },
+              { userId: hyp.b.userId, role: hyp.b.profile.role, accepted: false },
+            ],
+          },
+        },
+      });
+      ids.push(team.id);
+    }
+    return ids;
+  });
+
+  // 被收回的提案裡的其他成員：通知他們重新整理清單
+  const notify = new Set<string>();
+  for (const t of mine)
+    if (staleIds.includes(t.id))
+      for (const m of t.members) if (m.userId !== userId) notify.add(m.userId);
+  for (const u of notify) publish(`user:${u}`, { type: "refresh" });
+
   return teamIds;
 }

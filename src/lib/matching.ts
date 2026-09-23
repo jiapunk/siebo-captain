@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { llm, localLlm, LLM_MODE } from "./llm";
 import { publish } from "./bus";
-import { publicProfile, sanitizeProfile, type PublicProfile } from "./profile";
+import { profileFromRow, publicProfile, type PublicProfile } from "./profile";
 import type { Locale } from "./i18n-dict";
 import { CONTENT } from "./content";
 import {
@@ -11,7 +11,6 @@ import {
   type RunPartOptions,
 } from "./swarm";
 import { bothPass } from "./pairGate";
-import type { Prisma } from "@prisma/client";
 import type {
   HackathonProfile,
   MatchReport,
@@ -49,15 +48,13 @@ async function loadProfile(userId: string): Promise<ProfileBundle | null> {
     include: { profile: true },
   });
   if (!row?.profile?.compiled) return null;
-  const compiled = sanitizeProfile(row.profile.compiled);
   return {
     userId: row.id,
     name: row.name,
     emoji: row.emoji,
     isBot: row.isBot,
-    compiled: row.profile.verification
-      ? { ...compiled, github: row.profile.verification as unknown as HackathonProfile["github"] }
-      : compiled,
+    // compiled.github 一律忽略；GitHub 驗證只取伺服器寫入的 verification row
+    compiled: profileFromRow(row.profile.compiled, row.profile.verification),
     visibility: (row.profile.visibility as VisibilityMap) ?? null,
   };
 }
@@ -220,19 +217,17 @@ export async function startMatching(
 }
 
 /**
- * 追加一筆逐字稿事件（read-modify-write）。
- * 不變式：同一個 run 的事件一律在 runPair 內「循序」await 寫入；若改成並行寫會靜默丟事件。
+ * 追加一筆逐字稿事件：單一 UPDATE 以 SQLite json_insert 原子追加（不是 read-modify-write），
+ * 同一個 run 並行寫入也不會互相覆蓋而丟事件（tests/unit/append-event.test.ts 鎖住）。
+ * run 不存在 → 什麼都不做（不廣播）。
  */
-async function appendEvent(runId: string, e: RunEventBase) {
-  const run = await prisma.matchRun.findUnique({ where: { id: runId } });
-  if (!run) return;
-  const events = (run.events as unknown as RunEvent[]) ?? [];
+export async function appendEvent(runId: string, e: RunEventBase) {
   const full = { ...e, ts: Date.now() } as RunEvent;
-  events.push(full);
-  await prisma.matchRun.update({
-    where: { id: runId },
-    data: { events: events as unknown as Prisma.InputJsonValue },
-  });
+  const updated = await prisma.$executeRaw`
+    UPDATE "MatchRun"
+    SET "events" = json_insert(COALESCE("events", '[]'), '$[#]', json(${JSON.stringify(full)}))
+    WHERE "id" = ${runId}`;
+  if (updated === 0) return;
   publish(`run:${runId}`, { type: "event", event: full });
 }
 

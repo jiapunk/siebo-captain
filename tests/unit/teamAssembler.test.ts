@@ -4,11 +4,14 @@ import {
   composeTeamReport,
   enumerateHypotheses,
   hypothesisId,
+  latestUniqueHypotheses,
   localTeamAnswers,
   measureTeamRetention,
   passesHardConstraints,
   pickNonOverlapping,
+  staleProposalIds,
   type Candidate,
+  type ProposalRow,
 } from "../../src/lib/teamAssembler";
 import type { DecideAnswer } from "../../src/lib/llm/decide";
 import type { HackathonProfile } from "../../src/lib/types";
@@ -124,4 +127,43 @@ test("team_eval RETAIN：規則層直通算保留；遠端有題目退回規則�
   const r = measureTeamRetention(a, { source: "jev", fallbackIds: ["n_deadlock"] });
   assert.equal(r.retained, false);
   assert.deepEqual(r.overridden, ["n_deadlock"]);
+});
+
+test("重新組隊：只收回我上一輪發起、沒有其他真人同意的提案", () => {
+  const m = (userId: string, accepted = false, isBot = false) => ({ userId, accepted, user: { isBot } });
+  const team = (id: string, captainId: string | undefined, members: ProposalRow["members"], status = "proposed"): ProposalRow => ({
+    id,
+    status,
+    report: captainId === undefined ? { score: 70 } : { score: 70, captainId },
+    members,
+  });
+  const rows: ProposalRow[] = [
+    team("mine-bots", "me", [m("me"), m("bot1", false, true), m("bot2", false, true)]),
+    team("mine-i-accepted", "me", [m("me", true), m("h1"), m("bot1", false, true)]),
+    team("mine-other-accepted", "me", [m("me"), m("h1", true), m("bot1", false, true)]),
+    team("legacy-no-captain", undefined, [m("me"), m("bot3", false, true), m("bot4", false, true)]),
+    team("someone-elses", "h2", [m("h2"), m("me"), m("bot1", false, true)]),
+    team("mine-assembled", "me", [m("me", true), m("bot1", true, true), m("bot2", true, true)], "assembled"),
+    team("not-member", "me", [m("h3"), m("bot1", false, true), m("bot2", false, true)]),
+    // bot 的 accepted 不算「其他真人已同意」
+    team("mine-bot-accepted", "me", [m("me"), m("bot5", true, true), m("bot6", false, true)]),
+  ];
+  assert.deepEqual(staleProposalIds(rows, "me"), [
+    "mine-bots",
+    "mine-i-accepted",
+    "legacy-no-captain",
+    "mine-bot-accepted",
+  ]);
+});
+
+test("舊資料的反向重複假設 ID：同一組隊友只留最新一筆", () => {
+  const at = (id: string, t: number) => ({ id, updatedAt: new Date(t) });
+  const out = latestUniqueHypotheses([
+    at("t:me:b:a", 100), // 舊版反向 ID
+    at("t:me:a:b", 200), // 新版排序 ID（較新）
+    at("t:me:c:a", 300), // 只有反向版本：照樣保留
+    at("t:me:b:c", 50),
+    at("t:me:c:b", 10),
+  ]);
+  assert.deepEqual(out.map((p) => p.id).sort(), ["t:me:a:b", "t:me:b:c", "t:me:c:a"]);
 });

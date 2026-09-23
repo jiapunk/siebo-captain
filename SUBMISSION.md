@@ -58,7 +58,7 @@ v2 bundle_59acb3cc7a144c00 —— 公开可查：GET https://evomap.ai/a2a/asset
 学习来源：promoted Capsule sha256:299eb589…（GDI 41.3）→ 参考其 bundle 打包格式（自包含 validation、code_snippet 证据栏位），组队引擎为自研、未使用该基因
 ```
 
-**数据流与隐私**：默认 mock 模式不外送任何数据。接真 LLM / Jev（hybrid）时，访谈原文与档案编译会送到 LLM 供应商；互盘与组队评估只送分享权限投影后的档案与逐字稿；GitHub 只收到用户名；EvoMap 只收到不含用户 id / 姓名的汇总统计。完整表格见 README 的隐私与数据流一节，以及 AUDIT §6。
+**数据流与隐私**：默认 mock 模式不外送任何数据。接真 LLM / Jev（hybrid）时，访谈原文与档案编译会送到 LLM 供应商；互盘与组队评估只送分享权限投影后的档案与逐字稿；GitHub 只收到用户名；EvoMap 只收到不含用户 id / 姓名的汇总统计。访谈开始前会显示数据去向告知，勾选同意后才开始（目前只在前端把关，服务器不记录同意）。完整表格见 README 的隐私与数据流一节，以及 AUDIT §6。
 
 ## 4. 现场可复现的数据
 

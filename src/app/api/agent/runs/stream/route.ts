@@ -5,6 +5,8 @@ import { apiError, isId, route } from "@/lib/http";
 import { MAX_STREAM_RUNS, runsStream } from "../runStream";
 
 export const dynamic = "force-dynamic";
+/** 長連線：平台到時限會切斷；用戶端（RunStream）會重連，伺服器重送歷史、以 (runId, seq) 去重 */
+export const maxDuration = 300;
 
 /**
  * 多工逐字稿串流：GET /api/agent/runs/stream?ids=a,b,c

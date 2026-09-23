@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { LOCALES } from "../src/lib/i18n-dict";
 
 /** 測試截圖／下載檔的統一輸出目錄（已被 .gitignore 的 test-results/ 涵蓋，不會弄髒 repo） */
 export const SHOTS_DIR = join("test-results", "shots");
@@ -85,6 +86,8 @@ export interface RunSummary {
     failed: number;
     pending: number;
     retries: number;
+    /** 遠端失敗後改用本機腳本完成的 part 數（UI 的 LOCAL-FB） */
+    fallbacks?: number;
     retainedPct: number | null;
   } | null;
   partRows: { id: string; kind: string; status: string; retries: number }[];
@@ -127,4 +130,61 @@ export async function expectNoHorizontalScroll(page: Page, label = page.url()): 
     Math.max(dims.scroll, dims.body),
     `${label} 有水平捲動（scrollWidth ${dims.scroll}/${dims.body} > innerWidth ${dims.inner}）`,
   ).toBeLessThanOrEqual(dims.inner);
+}
+
+// ---------------- 語系殘留檢查（i18n-compare.spec／i18n-pages.spec 共用） ----------------
+// 剔除規則：使用者輸入的自由文字（名字、簡介、技能、目標、投入時間、合作方式…）是資料、不翻譯；
+// 系統的類別值（角色 fullstack/frontend/data…）有四語系顯示名（content.ts roleDisplay），不剔除、必須在地化。
+
+/**
+ * 繁體專用字（簡體寫法不同）：简中模式下 UI 出現任何一個就是繁中殘留。
+ * 已核對：這些字都不出現在 i18n-dict 的 cn 字典裡；人名常用的滿／綠／飛／歐／吳刻意不列（人名另外剔除）。
+ */
+const TRAD_ONLY =
+  "體對單隊長執報維數據與這個們會時間應開關點選擇資訊變讓說請認證網聯發現過還進運動優勢態雙邊義價質實際較準確結構績計論總費歷紀錄類處顯測試從來為東車門問題無專業習學覺視設語話讀寫聽難錯誤條規則標參備註項圍場層級狀連線斷獲評審員組織團賽環節階隱輸載儲檔刪編輯複製導覽頁觸樣預啟異號傳廣頻圖統協風譜興觀溝鐘遲積欄韌兩鈕盤揮擊離驗碼帳戶冊訪談達絡側麼嗎屬於後裡並將當衝夥臉詳細閱擁簡歸";
+export const TRAD_RE = new RegExp(`[${TRAD_ONLY}]`, "gu");
+
+/**
+ * 簡體專用字（日文新字體不用這個寫法）：日本語模式下出現就是简中殘留。
+ * 刻意排除日文也用的同形字（学号来当体会点数与双写条参状断制触属里将准）。
+ */
+const SIMP_ONLY =
+  "这们个队长执报对单时间说请认证应开关选择资讯变让网联发现过还进运动优势态边义价质实际较确结构绩计论总费历纪录类处显测试从为东车门问题无专业习觉视设语话读听难错误规则标备项围场层级连线获评审员组织团赛环节阶隐输载储档删编辑复导览页样预启传广频图统协风谱兴观沟钟迟积栏韧两钮盘挥击离验码帐户册访谈达络侧么吗并冲伙脸详细阅拥简归";
+export const SIMP_RE = new RegExp(`[${SIMP_ONLY}]`, "gu");
+
+/**
+ * 繁中專用、日文新字體不用的字（學→学、對→対、會→会、們／這／麼／嗎…）：日本語模式下出現就是繁中殘留。
+ * 已核對：這些字都不出現在 i18n-dict 與 content.ts 的 ja 顯示文案（只有 canon 比對關鍵字「拿獎／邊做」，不會顯示）。
+ * 日文也用的同形字（資料、全、端、隊、長…）刻意不列；角色等類別值的日文化由 EN 檢查兜底。
+ */
+const TRAD_NOT_JA =
+  "產學獎體對會數與點單發變讓應關擇經驗實價據處顯從來專覺讀寫聽條參圍狀斷團隱覽觸樣號傳廣圖觀遲兩擊屬將當歸雙邊總歷錄們這麼嗎裡啟檔儲夥臉鈕碼說內";
+/** 日本語模式禁用字：簡體專用字 ∪ 日文不用的繁體字 */
+export const JA_FORBID_RE = new RegExp(`[${SIMP_ONLY}${TRAD_NOT_JA}]`, "gu");
+
+/** 漢字、假名與全形標點（EN 模式下都不該出現在 UI 上） */
+export const CJK_RE = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff01-\uff60]/gu;
+
+/** 平假名／片假名（日本語模式應該有） */
+export const KANA_RE = /[\u3040-\u30ff]/u;
+
+/** 取頁面文字並剔除「資料」：使用者名稱與其他使用者輸入、語系切換鈕的原生語言名稱 */
+export async function uiText(page: Page, data: string[]): Promise<string> {
+  let text = await page.locator("body").innerText();
+  const strip = [...data, ...LOCALES.map((l) => l.label)]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  for (const s of strip) text = text.split(s).join(" ");
+  return text;
+}
+
+/** 列出命中的字與前後文，失敗訊息直接指出殘留在哪 */
+export function offenders(text: string, re: RegExp): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(re)) {
+    const i = m.index ?? 0;
+    out.push(`「${m[0]}」…${text.slice(Math.max(0, i - 8), i + 8).replace(/\s+/g, " ")}…`);
+    if (out.length >= 15) break;
+  }
+  return out;
 }

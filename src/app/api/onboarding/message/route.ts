@@ -20,7 +20,7 @@ const MAX_USER_TURNS = 20;
  * - 400 content required / content_too_long（附 max）
  * - 409 in_progress：同一使用者上一則還在處理（避免讀-改-寫互相覆蓋）
  * - 409 interview_too_long：回答數已達上限
- * - 429 rate_limited：每人 20 則 / 分鐘
+ * - 429 rate_limited：每人 20 則 / 分鐘，另有每來源／全站預算（見 costGuard SHARED_LIMITS）
  */
 export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
@@ -39,7 +39,7 @@ export const POST = route(async (req: Request) => {
   const release = tryLock(`onboarding:${uid}`, 2 * 60_000);
   if (!release) return apiError(409, "in_progress");
   try {
-    throttle("onboardingMessage", uid);
+    throttle("onboardingMessage", uid, req);
 
     let profile = await prisma.agentProfile.findUnique({ where: { userId: uid } });
     if (!profile)

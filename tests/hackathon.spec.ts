@@ -26,6 +26,40 @@ test("組隊局：隊長出發 → 隊伍提案 → 加入 → 團隊聊天", as
   await expect(
     page.getByRole("button", { name: /產生隊伍提案/ }),
   ).toBeVisible({ timeout: 60_000 });
+
+  // 2a. 逐字稿內容（不只是「對談進行中」）：等這一輪全部結束，再逐 run 檢查
+  let runs: { id: string; status: string; eventCount: number; other: { name: string } }[] = [];
+  await expect
+    .poll(
+      async () => {
+        ({ runs } = (await page.request.get("/api/agent/runs").then((r) => r.json())) as {
+          runs: typeof runs;
+        });
+        return runs.length > 0 && runs.every((r) => r.status !== "running");
+      },
+      { timeout: 60_000, intervals: [500, 1000] },
+    )
+    .toBe(true);
+  for (const r of runs) {
+    expect(r.status, `run ${r.id}`).toBe("completed");
+    // 連線 + 訪談 + 問答 ×2 輪（每題一問一答）+ 回訪 + 報告階段 + 雙方報告 + 完成：至少 11 則
+    expect(r.eventCount, `run ${r.id} 逐字稿事件數`).toBeGreaterThanOrEqual(11);
+  }
+  // 出發後每場都自動展開：每場都有連線階段、完成結論；問答氣泡有我方與對方隊長、內容是實際的問與答
+  // （階段列前面有「▸」圖示，所以不錨定行首）
+  await expect(page.getByText(/已與 .+ 的隊長建立對談$/)).toHaveCount(runs.length, {
+    timeout: 20_000,
+  });
+  await expect(page.getByText(/^▣ (雙方隊長達成共識|至少一位隊長覺得先緩緩)/)).toHaveCount(
+    runs.length,
+    { timeout: 20_000 },
+  );
+  await expect(page.getByText("YOUR CAPTAIN // 你的隊長", { exact: true }).first()).toBeVisible();
+  const firstOther = runs[0].other.name;
+  await expect(page.getByText(`${firstOther} 的隊長`, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/擅長哪一塊？技能跟我們家互補嗎？$/).first()).toBeVisible();
+  await expect(page.getByText(/^.+ 是.+，主力 .+/).first()).toBeVisible();
+  await expect(page.getByText(/^目標是「.+」，可投入：/).first()).toBeVisible();
   await page.waitForTimeout(600);
   await page.screenshot({ path: shotPath("11-hack-runs.png"), fullPage: true });
 

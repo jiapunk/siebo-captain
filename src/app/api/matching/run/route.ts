@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 /**
  * 隊長出發：對最多 5 位候選各開一場互盤（背景執行）。
  * - 409 already_running：你上一輪還有 running 的 run（回應附 runIds），或同一瞬間的重複請求
- * - 429 rate_limited：每人 10 次 / 10 分鐘（附 retryAfterSec）
+ * - 429 rate_limited：每人 10 次 / 10 分鐘，另有每來源／全站預算（附 retryAfterSec、scope；見 costGuard SHARED_LIMITS）
  */
 export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
@@ -36,7 +36,7 @@ export const POST = route(async (req: Request) => {
     if (running.length > 0)
       return apiError(409, "already_running", { runIds: running.map((r) => r.id) });
 
-    throttle("matching", uid);
+    throttle("matching", uid, req);
 
     const locale = await getServerLocale();
     const runIds = await startMatching(uid, locale, { faultInject });

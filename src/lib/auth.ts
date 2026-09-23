@@ -109,6 +109,10 @@ export async function createSession(userId: string): Promise<string> {
   const token = randomBytes(32).toString("hex");
   // 只存 token 的雜湊，資料庫外洩時無法直接冒用
   const id = createHash("sha256").update(token).digest("hex");
+  // 順手清掉已過期的工作階段（沒有排程工作，靠登入時機會式清理）
+  await prisma.session
+    .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+    .catch(() => {});
   await prisma.session.create({
     data: {
       id,
@@ -148,6 +152,12 @@ export async function createAuthToken(
 ): Promise<string> {
   const raw = randomBytes(32).toString("hex");
   const id = createHash("sha256").update(raw).digest("hex");
+  // 順手清掉已過期或已用過的權杖（消費時本來就會拒絕它們，刪掉不影響行為）
+  await prisma.authToken
+    .deleteMany({
+      where: { OR: [{ expiresAt: { lt: new Date() } }, { usedAt: { not: null } }] },
+    })
+    .catch(() => {});
   await prisma.authToken.create({
     data: {
       id,
@@ -213,7 +223,8 @@ export function validatePassword(password: string, email: string): string | null
  * 刪除使用者與其所有個人資料（單一交易，全部成功或全部不動）：
  * - 以他為任一方的互盤 MatchRun，及其 SwarmPart、SoloBaseline、破冰卡（含對方看他的那張）
  * - 他自己的破冰卡、帳本、聯絡（連同整段私訊）、他發的隊伍訊息、隊伍成員資格
- *   （移除後剩不到 2 人的隊伍整隊刪除）、自己的組隊假設評估 part（teamId = h:<uid>）
+ *   （移除後剩不到 2 人或只剩模擬隊友的隊伍整隊刪除，連同隊伍訊息；
+ *   還有其他真人的隊伍保留，但清掉報告裡的 rationale / coverage）、自己的組隊假設評估 part（teamId = h:<uid>）
  *   以及別人假設裡含他的 team_eval part（id = t:<owner>:<a>:<b>）
  * - Session、AuthToken、AgentProfile（訪談逐字稿/檔案/GitHub 驗證）、活動成員資格、User 本身
  * 回傳刪除的 MatchRun 數（給呼叫端記錄用）。
@@ -260,11 +271,28 @@ export async function deleteUserAndData(uid: string): Promise<{ runs: number }> 
     if (teamIds.length) {
       const teams = await tx.team.findMany({
         where: { id: { in: teamIds } },
-        select: { id: true, _count: { select: { members: true } } },
+        select: {
+          id: true,
+          report: true,
+          members: { select: { user: { select: { isBot: true } } } },
+        },
       });
-      const orphanTeams = teams.filter((t) => t._count.members < 2).map((t) => t.id);
+      // 剩不到 2 人、或只剩模擬隊友（沒有任何真人）的隊伍整隊刪除；
+      // TeamMember / TeamMessage（含模擬隊友回他的話）隨 Team cascade 一起刪
+      const orphanTeams = teams
+        .filter((t) => t.members.length < 2 || t.members.every((m) => m.user.isBot))
+        .map((t) => t.id);
       if (orphanTeams.length)
         await tx.team.deleteMany({ where: { id: { in: orphanTeams } } });
+      // 還有其他真人的隊伍保留，但報告裡由三人檔案組出的內容（角色、投入時間、目標、角色分布）
+      // 含有他的資料，一併清掉；分數與風險旗標是通用模板字串，保留
+      for (const t of teams) {
+        if (orphanTeams.includes(t.id) || !t.report) continue;
+        await tx.team.update({
+          where: { id: t.id },
+          data: { report: scrubTeamReport(t.report) },
+        });
+      }
     }
 
     await tx.ledgerEvent.deleteMany({ where: { userId: uid } });
@@ -275,4 +303,22 @@ export async function deleteUserAndData(uid: string): Promise<{ runs: number }> 
     await tx.user.delete({ where: { id: uid } });
     return { runs: runIds.length };
   });
+}
+
+/**
+ * 成員刪帳後，保留隊伍的報告要拿掉由成員檔案組出的內容：
+ * rationale（角色、投入時間、目標文字與評估說明）、coverage（角色分布）清空；
+ * score / risks / signals 不含個人文字，保留。維持陣列欄位，前端 `.map` 不會壞。
+ */
+function scrubTeamReport(report: unknown): object {
+  const r =
+    report && typeof report === "object" && !Array.isArray(report)
+      ? (report as Record<string, unknown>)
+      : {};
+  return {
+    ...r,
+    rationale: [],
+    coverage: [],
+    risks: Array.isArray(r.risks) ? r.risks : [],
+  };
 }

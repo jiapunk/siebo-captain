@@ -84,6 +84,8 @@ export interface ReportRetention {
 
 // ---------- 隊伍提案報告 ----------
 export interface TeamReport {
+  /** 發起這份提案的隊長 userId（assembleTeams 寫入；舊資料沒有此欄位） */
+  captainId?: string;
   score: number;
   rationale: string[];
   coverage: string[];

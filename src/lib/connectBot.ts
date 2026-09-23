@@ -9,13 +9,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** 送給 LLM 的私訊歷史只取最近幾則（只含 senderId + content，不帶任何其他欄位） */
 export const DM_HISTORY_LIMIT = 20;
 
-/** 一對一私訊：模擬對象延遲回覆 */
+/**
+ * 一對一私訊：模擬對象延遲回覆。
+ * 回傳的 Promise 一定 resolve（錯誤只寫 log）；路由要用 next/server 的 after() 包起來，
+ * 讓平台／graceful shutdown 等它跑完，而不是回應送出後就被丟掉。
+ */
 export function scheduleConnectReply(
   connectionId: string,
   humanSenderId: string,
   locale: Locale = "zh",
-) {
-  void (async () => {
+): Promise<void> {
+  return (async () => {
     try {
       const delay = LLM_MODE === "mock" ? 1500 + Math.random() * 1500 : 400;
       await sleep(delay);

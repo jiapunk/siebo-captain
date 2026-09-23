@@ -198,11 +198,21 @@ model TeamMessage {
 }
 
 // ---------- 蜂群 Part：原子工作單元（覆蓋檢查、重試、決策軌跡） ----------
+// ⚠ runId／teamId 都沒有 FK（本檔其他沒寫 @relation 的 *Id 欄位同理：MatchRun.userAId/userBId、
+//   Icebreaker.runId/viewerId、SoloBaseline.runId、LedgerEvent.userId、Connection.userAId/userBId、
+//   TeamMessage/ConnectMessage.senderId）。參照完整性由應用層維護：
+//   src/lib/auth.ts deleteUserAndData（刪帳號）、prisma/seed.ts 與 npm run db:prune-orphans
+//   （規則在 prisma/orphans.ts；demo:restore 會自動跑）。
 model SwarmPart {
-  id         String   @id // 穩定 ID：q:<runId>:A、r:<runId>:B、team:<hypId>
-  runId      String? // 互盤 run（pair 類）
-  teamId     String? // 隊伍假設（team 類）
-  kind       String // phase | questions | answers | report | team_eval
+  // 穩定 ID：
+  //   pair 類  q:<runId>:A|B、a:<runId>:A|B、r:<runId>:A|B（src/lib/swarm.ts PAIR_PART_IDS）
+  //   team 類  t:<ownerId>:<a>:<b>（a < b 為兩位候選隊友 id，src/lib/teamAssembler.ts hypothesisId）
+  id         String   @id
+  runId      String? // pair 類：所屬互盤 MatchRun.id；team 類為 null
+  // team 類：假設的 owner 分組鍵（不是 Team.id）。h:<ownerId> = 最新一輪；
+  // 重新組隊時上一輪改成 h:<ownerId>:prev 封存（本輪相同 ID 的假設會搬回 h:<ownerId>）。pair 類為 null
+  teamId     String?
+  kind       String // questions | answers | report（pair 類）| team_eval（team 類）
   label      String   @default("")
   status     String   @default("pending") // pending | done | failed
   provider   String? // jev | llm | mock

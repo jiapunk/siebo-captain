@@ -63,6 +63,8 @@ npm run test:e2e                   # Playwright E2E（tests/**/*.spec.ts）
 
 `test:e2e` 使用**獨立的測試資料庫**（`prisma/test-<port>.db`，預設 port 3100）與獨立的 build 目錄，全部走 mock（LLM、決策層、GitHub、EvoMap 都不外連），**不會動到 demo 用的 `prisma/dev.db`**。可用 `E2E_PORT` 換 port。
 
+> Next 16 在 build 目錄不是預設的 `.next` 時，會自動在 `tsconfig.json` 的 `include` 加兩行（`<目錄>/types/**/*.ts`）。`test:e2e` 跑完會自動還原；自己用 `NEXT_DIST_DIR=…` 手動跑 `dev`／`build` 時，結束後要自己還原 `tsconfig.json`（例如 `git checkout tsconfig.json`），不要把這兩行提交進去。
+
 ### Demo 現場
 
 ```bash
@@ -204,6 +206,7 @@ JEV_API_KEY=...                              # hybrid 評分用（沒有就退�
 | GitHub API | 按「GitHub 比對」且 `GITHUB_VERIFY` 不是 mock | 你輸入的 GitHub 使用者名稱（可選 `GITHUB_TOKEN`；結果快取 10 分鐘） |
 | EvoMap（`EVOMAP_BASE`） | `EVOMAP_ENABLED=1`，由 CLI 或管理者帳號觸發 | 組隊彙總統計（隊伍數、平均分、provider、Part 完成數），不含使用者 id 或姓名；心跳只送節點憑證 |
 
+- **訪談前告知**：`/onboarding` 開始新訪談前先顯示一張告知卡：回答會送到第三方 AI 服務處理、伺服器可能在使用者所在地區以外、分享權限擋不住 AI 服務處理、可隨時刪除帳號；要勾選同意才開始（mock 模式另註明回答不會外送）。已經有回答的訪談不再顯示。同意只在前端把關，伺服器沒有記錄或檢查（見「已知限制」）
 - **分享權限**：關閉的欄位不會給對方參賽者看到，也不會放進互盤、組隊、網絡圖送出的檔案；但訪談原文與你自己的破冰卡生成仍會送到 LLM 供應商
 - **資料保存**：訪談逐字稿與檔案存在本機 SQLite；`DELETE /api/me` 會刪除帳號與個人資料。第三方供應商端的保存政策不在本服務控制範圍
 
@@ -311,7 +314,7 @@ tests/
   api/*.spec.ts        # API 層：api-guards auth-security
   unit/*.test.ts       # 單元（node:test）：decide engine-misc ledger network pairGate retain teamAssembler
   global-setup.ts helpers.ts
-shots/                 # 靜態展示截圖（歷史畫面，測試不會再覆寫；測試截圖寫到 test-results/）
+shots/                 # 靜態展示截圖（多數早於修正版，細節可能與現況不同；測試不會再覆寫，測試截圖寫到 test-results/）
 ```
 
 ## 🧪 測試
@@ -345,7 +348,7 @@ E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測�
 - **真 LLM／Jev 模式需要付費 key**：現場數據（Jev 評分、/compare 延遲、token）用 fresh clone 的 mock 模式無法重現；LLM 輸出有隨機性，即使有 key 也不會得到相同數字
 - **/compare** 每場只有一次單體取樣，且單體沿用蜂群逐字稿；不能當統計結論
 - **SSE 單實例**；前端斷線後的重連策略以各頁實作為準
-- **隱私告知**：訪談前尚無第三方處理的告知與同意流程（資料流見上方「隱私與資料流」）
+- **隱私告知只在前端把關**：新訪談開始前會顯示資料去向說明，勾選同意後才開始（見上方「隱私與資料流」）；伺服器不記錄同意時間，也不會擋下沒經過這一頁、直接呼叫訪談 API 的請求。另外，訪談與檔案編譯送往 LLM 供應商的 `x-opencode-session` 仍是 userId
 
 ---
 
