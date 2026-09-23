@@ -1,10 +1,11 @@
-# Live API 证据（修正版 server 实测；采集时间：2026-09-23 08:17–08:21 PDT，commit：599b0e3，分支 review-fixes）
+# Live API 证据（修正版 server 实测；采集时间：2026-09-23 09:56–09:58 PDT，commit：85ab163，分支 review-fixes）
 # 启动方式：cp prisma/dev.db prisma/agent-gate.db（demo 数据的副本，原档不动）→
 #   DATABASE_URL=file:./agent-gate.db NEXT_DIST_DIR=.next-gate-dev LLM_PROVIDER=mock DECISION_PROVIDER=mock
 #   GITHUB_VERIFY=mock EVOMAP_ENABLED=0 JEV_API_KEY= LLM_API_KEY= npx next dev -p 3230；请求带示范身份 cookie sd_uid=seed-Demo阿飛
 # 解读：第 1–6 节是 demo 数据库里「已存在」的记录 —— 2026-09-22 由修正前的代码在 hybrid 模式（真 Jev + 真 LLM）写入，
-#   修正版 server 只负责读取与重新计算（聚类、双信号模拟、Δ、compare 分栏都是修正版的算法）。第 7 节是修正版在 mock 模式下新跑的互盘。
+#   修正版 server 只负责读取与重新计算（聚类、双信号模拟、Δ、compare 分栏、假设去重都是修正版的算法）。第 7 节是修正版在 mock 模式下新跑的互盘。
 #   mock 模式不会重现 Jev / LLM 的数字；要重现第 1–6 节的来源数字需 hybrid 模式与付费 key（LLM 另有随机性）。
+# demo 数据库：修正版已用 npm run db:prune-orphans 清掉孤儿 SwarmPart（2647 → 97 笔），互盘、队伍、账本记录不变。
 
 ## 0. GET /api/me
   llmMode=mock authMode=demo user=Demo阿飛 (seed-Demo阿飛) event=EvoTavern profile=ready
@@ -25,10 +26,10 @@
   hubs: Demo阿飛(deg 4), Kiwi(deg 2), 小滿(deg 2)
   edges: Demo阿飛–Kiwi; Demo阿飛–小滿; Kiwi–小滿; Demo阿飛–小綠; Demo阿飛–老吳; 小綠–老吳
   手算核对：Demo阿飛 deg4，邻居间 2 条边 → 2/6；Kiwi、小滿、小綠、老吳 各 1；其余 4 个节点 0 → (1/3+4)/9 = 0.481 ✓
-  sim.social    : edges=8 (+2) clustering=0.55 crossGroup=6 picked=[['小綠', '老吳'], ['Kiwi', '里歐']] newEdges=[['Demo阿飛', '里歐'], ['Kiwi', '里歐']]
-  sim.competence: edges=6 (+0) clustering=0.48 crossGroup=5 picked=[['小綠', '老吳'], ['Kiwi', '小滿']] newEdges=[]
-  sim.hypotheses=16（只用当前用户最新一轮的 team_eval 假设；每队 = 本人 + 两位队友的三角形）
-  结论：social 第二队选 Kiwi+里歐（新增 2 条边、聚类 0.55），competence 选 Kiwi+小滿（0 条新边、聚类 0.48）—— 两种信号选出的队伍不同
+  sim.social     : edges=8 (+2) clustering=0.55 crossGroup=6 picked=[['老吳', '小綠'], ['里歐', 'Kiwi']] newEdges=[['Demo阿飛', '里歐'], ['Kiwi', '里歐']]
+  sim.competence : edges=6 (+0) clustering=0.48 crossGroup=5 picked=[['老吳', '小綠'], ['小滿', 'Kiwi']] newEdges=[]
+  sim.hypotheses=10（只用当前用户最新一轮的 team_eval 假设，旧数据里反向重复的假设 ID 同一组队友只算最新一笔；每队 = 本人 + 两位队友的三角形）
+  结论：social 第二队选 里歐+Kiwi（新增 2 条边、聚类 0.55），competence 选 小滿+Kiwi（0 条新边、聚类 0.48）—— 两种信号选出的队伍不同
 
 ## 3. Agent Ledger → 能力分（nodes[].competence；公式见 src/lib/ledger.ts）
   Demo阿飛 competence=62 degree=4
@@ -43,7 +44,9 @@
   例：Demo阿飛 加入 2 队（67、74）→ 35 + min(20, 2×8) + min(15, 70.5×0.15) = 61.6 → 62；只加入 1 队（67）的 Kiwi → 35+8+10.05 = 53；没有账本记录 = 基准 35
 
 ## 4. GET /api/teams
-  swarm: hypotheses=16 selected=1 failed=0 providers=['jev', 'mock']
+  swarm: hypotheses=10 selected=1 failed=0 providers=['jev']
+  （本轮修正：/api/teams 改用与网络模拟相同的去重计数；修正前同一份数据回 hypotheses=16、providers=['jev', 'mock']，
+    多出来的 6 笔是旧数据里 t:o:a:b / t:o:b:a 反向重复的同一组队友）
   team cmudup9670 | proposed  | score 76 | members 3 (Demo阿飛, 小滿, 里歐) | signals mode=competence teamEval=82 competenceAvg=58 | created 2026-09-23T08:38:27.247Z
   team cmucdepcv0 | assembled | score 74 | members 3 (Demo阿飛, 小綠, 老吳) | signals mode=competence teamEval=87 competenceAvg=35 | created 2026-09-22T07:46:35.360Z
   team cmuccwghc0 | assembled | score 67 | members 3 (Demo阿飛, Kiwi, 小滿) | signals mode=competence teamEval=77 competenceAvg=35 | created 2026-09-22T07:32:24.049Z
@@ -61,16 +64,16 @@
   {"comparison": {"runId": "cmuccpjgi0015my5rygqgfv5p", "createdAt": "2026-09-22T09:28:47.627Z", "swarm": {"source": "jev", "latencyMs": 46036, "calls": 6, "retries": 0, "score": 81, "verdict": "recommend", "dimensions": {"interests": 46, "values": 97, "lifestyle": 96, "communication": 81, "intent": 86}, "reasons": 5, "redFlags": 1, "sharedTopics": 4, "fieldsFilled": 10, "fieldsExpected": 10, "timing": {"totalMs": 46036, "scoringMs": 1492, "transcriptMs": 44070}, "callBreakdown": {"transcript": 4, "scoring": 2, "scoringComparable": 1}, "reusesSwarmTranscript": false, "scoringSource": "jev", "tokens": {"input": null, "output": null}, "extra": {"expected": 6, "done": 6, "failed": 0, "providers": ["hybrid", "jev"], "avgLatencyMs": 7660, "totalPartMs": 45959, "wallMs": 46036, "ruleScore": 75, "deltaVsRule": 6, "measurableParts": 6, "fallbackCount": null, "retention": null}}, "solo": {"source": "llm-single", "latencyMs": 22904, "calls": 1, "retries": 0, "score": 76, "verdict": "recommend", "dimensions": {"values": 90, "lifestyle": 78, "interests": 58, "communication": 74, "intent": 88}, "reasons": 7, "redFlags": 6, "sharedTopics": 8, "fieldsFilled": 10, "fieldsExpected": 10, "extra": {"model": "deepseek-v4.1-flash"}, "timing": {"totalMs": 22904, "scoringMs": 22904, "transcriptMs": 0}, "callBreakdown": {"transcript": 0, "scoring": 1, "scoringComparable": 1}, "reusesSwarmTranscript": true, "scoringSource": "llm-single", "tokens": {"input": null, "output": null}}, "agreement": {"scoreDiff": 5, "dimAvgDiff": 9.2}}, "perspective": "A", "viewerSide": "A"}
 
 ## 7. 修正版 mock 模式新跑（POST /api/matching/run → 等 run 完成 → GET /api/agent/runs；POST /api/compare）
-  POST /api/matching/run → {"runIds": ["cmue92rrf0001myh75bsbckuk", "cmue92rrg0003myh7mnzzuzip", "cmue92rrh0005myh75nkjq3q8", "cmue92rrh0007myh72y2qlmvz"]}
-  里歐   | completed | decisionSource=mock | score 73 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
+  POST /api/matching/run → {"runIds": ["cmuecjbio0001mykapwygdwxs", "cmuecjbir0003myka77ozxer1", "cmuecjbit0005mykautptrlmp", "cmuecjbiz0007mykaalckrik7"]}
+  里歐   | completed | decisionSource=mock | score 75 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
+  霓霓   | completed | decisionSource=mock | score 77 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
   阿宏   | completed | decisionSource=mock | score 69 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
-  霓霓   | completed | decisionSource=mock | score 74 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
-  阿哲   | completed | decisionSource=mock | score 73 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
+  阿哲   | completed | decisionSource=mock | score 71 | PARTS 6/6 retries=0 fallbacks=0 | RETAIN 8/8 (clamped=[] overridden=[]) retainedPct=100 | providers=['mock']
   合计：新 4 场全部 completed、PARTS 6/6、decisionSource=mock（规则层直通 → RETAIN 8/8，符合文件「mock 恒为全数保留」）；runs 总数 5 → 9
-  POST /api/compare {runId: cmue92rrh0007myh72y2qlmvz}（mock 单体 baseline）
-  swarm: source=mock scoringSource=mock score=73 verdict=recommend | 全流程 totalMs=9209（transcriptMs 1 / scoringMs 2） | calls transcript=4 scoring=2 scoringComparable=1 | reusesSwarmTranscript=False | tokens={'input': None, 'output': None}
-  solo : source=mock-single scoringSource=mock score=76 verdict=recommend | 全流程 totalMs=0（transcriptMs 0 / scoringMs 0） | calls transcript=0 scoring=1 scoringComparable=1 | reusesSwarmTranscript=True | tokens={'input': None, 'output': None}
-  agreement: scoreDiff=3 dimAvgDiff=2.2 | perspective=A viewerSide=A
+  POST /api/compare {runId: cmuecjbiz0007mykaalckrik7}（mock 单体 baseline）
+  swarm: source=mock scoringSource=mock score=75 verdict=recommend | 全流程 totalMs=9227（transcriptMs 1 / scoringMs 2） | calls transcript=4 scoring=2 scoringComparable=1 | reusesSwarmTranscript=False | tokens={'input': None, 'output': None}
+  solo : source=mock-single scoringSource=mock score=76 verdict=recommend | 全流程 totalMs=1（transcriptMs 0 / scoringMs 1） | calls transcript=0 scoring=1 scoringComparable=1 | reusesSwarmTranscript=True | tokens={'input': None, 'output': None}
+  agreement: scoreDiff=1 dimAvgDiff=1 | perspective=A viewerSide=A
   mock 模式的逐字稿有展示用节奏延迟，所以蜂群 totalMs≈9 s 而各 Part 延迟≈0 ms；这组数字只证明流程与栏位正确，不代表真实延迟
 
 ## 8. 收尾

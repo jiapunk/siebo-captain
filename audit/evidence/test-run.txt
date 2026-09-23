@@ -1,8 +1,11 @@
-# 测试证据（生成时间：2026-09-23 08:25 PDT，commit：599b0e3，分支 review-fixes）
+# 测试证据（生成时间：2026-09-23 10:08 PDT，commit：85ab163，分支 review-fixes）
 # 路径已去识别：<repo> = 仓库根目录，<scratchpad> = 本机临时目录
-# 完整原始输出，未节选。单元测试 36 passed；E2E 38 passed（Playwright，1 worker，retries=0）。
+# 完整原始输出，未节选。单元测试 51 passed（10 个文件）；E2E 48 passed（19 个 spec 文件，Playwright，1 worker，retries=0）。
 # E2E 隔离：playwright.config.ts 固定 DATABASE_URL=file:./test-3100.db、NEXT_DIST_DIR=.next-test-3100、
 #           LLM/决策层/GitHub 全 mock、EvoMap 关闭、外部端点指向 127.0.0.1:9；不会读写 prisma/dev.db。
+# 本轮修到全绿的过程（都已提交）：第一次完整跑 46/48，i18n-pages 的 cn / en 在 /teams、/people 看到未在地化的角色标签
+#   （后端 / 全端 / 资料 / 前端）→ 页面改用 roleDisplay；单独重跑时 ja 案例因三个语系共用一份测试数据而 run 数对不上
+#   （只在前两案失败、worker 重启重新 resetDemo 时才会通过）→ 改为每个案例各自 resetDemo。之后工作目录完整跑 2 次、全新 clone 完整跑 2 次，全部 48/48（下面是 commit 85ab163 在工作目录的那一次）。
 
 ## 1) npm run test:unit（node:test，tests/unit/*.test.ts）
 $ npm run test:unit
@@ -11,32 +14,44 @@ $ npm run test:unit
 > tsx --test tests/unit/*.test.ts
 
 TAP version 13
+# Subtest: appendEvent：同一個 run 並行追加 10 筆，一筆都不會遺失
+ok 1 - appendEvent：同一個 run 並行追加 10 筆，一筆都不會遺失
+  ---
+  duration_ms: 420.534584
+  type: 'test'
+  ...
+# Subtest: appendEvent：循序追加維持順序；不存在的 run 不報錯也不建立資料
+ok 2 - appendEvent：循序追加維持順序；不存在的 run 不報錯也不建立資料
+  ---
+  duration_ms: 9.943041
+  type: 'test'
+  ...
 # [decide] jev 覆蓋不足（1/3）→ 只重打缺漏的 2 題
 # [decide] jev 覆蓋不足（1/3）→ 只重打缺漏的 2 題
 # [decide] jev 覆蓋不足（0/3）→ 只重打缺漏的 3 題
 # [decide] jev 不可用（no_valid_answers）→ 下一層
 # Subtest: parseAnswer：範圍與枚舉驗證
-ok 1 - parseAnswer：範圍與枚舉驗證
+ok 3 - parseAnswer：範圍與枚舉驗證
   ---
-  duration_ms: 0.845542
+  duration_ms: 1.54375
   type: 'test'
   ...
 # Subtest: 逐題 fallback：不合法的題目退回規則，只重打缺漏題並合併
-ok 2 - 逐題 fallback：不合法的題目退回規則，只重打缺漏題並合併
+ok 4 - 逐題 fallback：不合法的題目退回規則，只重打缺漏題並合併
   ---
-  duration_ms: 9.759
+  duration_ms: 28.3055
   type: 'test'
   ...
 # Subtest: 第 2 次重打失敗時保留第 1 次的部分答案
-ok 3 - 第 2 次重打失敗時保留第 1 次的部分答案
+ok 5 - 第 2 次重打失敗時保留第 1 次的部分答案
   ---
-  duration_ms: 0.497208
+  duration_ms: 1.206834
   type: 'test'
   ...
 # Subtest: 遠端一題有效答案都沒有 → source 必須是 mock，不能標 jev
-ok 4 - 遠端一題有效答案都沒有 → source 必須是 mock，不能標 jev
+ok 6 - 遠端一題有效答案都沒有 → source 必須是 mock，不能標 jev
   ---
-  duration_ms: 1.075041
+  duration_ms: 1.418041
   type: 'test'
   ...
 # [decide] jev 不可用（timeout）→ 下一層
@@ -50,209 +65,288 @@ ok 4 - 遠端一題有效答案都沒有 → source 必須是 mock，不能標 j
 # [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
 # [decide] jev 不可用（HTTP 503 {"error":"down"}）→ 下一層
 # Subtest: 逾時涵蓋讀 body：標頭回來後 body 卡住也會在時限內退回規則
-ok 5 - 逾時涵蓋讀 body：標頭回來後 body 卡住也會在時限內退回規則
+ok 7 - 逾時涵蓋讀 body：標頭回來後 body 卡住也會在時限內退回規則
   ---
-  duration_ms: 151.441916
+  duration_ms: 151.59875
   type: 'test'
   ...
 # Subtest: 斷路器：連續 3 次失敗才打開；成功歸零
-ok 6 - 斷路器：連續 3 次失敗才打開；成功歸零
+ok 8 - 斷路器：連續 3 次失敗才打開；成功歸零
   ---
-  duration_ms: 2.6935
+  duration_ms: 5.994875
   type: 'test'
   ...
 # Subtest: 斷路器：冷卻後半開只放一個探測，探測成功才關閉
-ok 7 - 斷路器：冷卻後半開只放一個探測，探測成功才關閉
+ok 9 - 斷路器：冷卻後半開只放一個探測，探測成功才關閉
   ---
-  duration_ms: 0.186584
+  duration_ms: 0.312875
   type: 'test'
   ...
 # Subtest: 斷路器：並行呼叫在半開時只有一個真的送出
-ok 8 - 斷路器：並行呼叫在半開時只有一個真的送出
+ok 10 - 斷路器：並行呼叫在半開時只有一個真的送出
   ---
-  duration_ms: 22.083667
+  duration_ms: 22.4105
   type: 'test'
   ...
 # Subtest: 候選排序：未互盤真人 → 未互盤 bot → 互盤過的（真人先、最久以前先）；上限 5
-ok 9 - 候選排序：未互盤真人 → 未互盤 bot → 互盤過的（真人先、最久以前先）；上限 5
+ok 11 - 候選排序：未互盤真人 → 未互盤 bot → 互盤過的（真人先、最久以前先）；上限 5
   ---
-  duration_ms: 0.596333
+  duration_ms: 1.686166
   type: 'test'
   ...
 # Subtest: 分享權限：dealbreakers 預設不外送，只有明確設為 true 才顯示
-ok 10 - 分享權限：dealbreakers 預設不外送，只有明確設為 true 才顯示
+ok 12 - 分享權限：dealbreakers 預設不外送，只有明確設為 true 才顯示
   ---
-  duration_ms: 2.489375
+  duration_ms: 6.45775
   type: 'test'
   ...
 # Subtest: sanitizeProfile：型別錯誤不會讓下游崩潰、長度有上限、去掉資料分隔標記
-ok 11 - sanitizeProfile：型別錯誤不會讓下游崩潰、長度有上限、去掉資料分隔標記
+ok 13 - sanitizeProfile：型別錯誤不會讓下游崩潰、長度有上限、去掉資料分隔標記
   ---
-  duration_ms: 0.223458
+  duration_ms: 0.588958
   type: 'test'
   ...
 # Subtest: mock 團隊回覆／私訊：第 4 個參數是 sessionId，locale 不再被蓋掉
-ok 12 - mock 團隊回覆／私訊：第 4 個參數是 sessionId，locale 不再被蓋掉
+ok 14 - mock 團隊回覆／私訊：第 4 個參數是 sessionId，locale 不再被蓋掉
   ---
-  duration_ms: 0.14125
+  duration_ms: 0.340917
+  type: 'test'
+  ...
+# Subtest: 第一個請求 403 且 X-RateLimit-Remaining=0 → rate_limited，重試秒數取自 X-RateLimit-Reset
+ok 15 - 第一個請求 403 且 X-RateLimit-Remaining=0 → rate_limited，重試秒數取自 X-RateLimit-Reset
+  ---
+  duration_ms: 18.379417
+  type: 'test'
+  ...
+# Subtest: 429（帶 Retry-After）→ rate_limited；repos 請求被限流也一樣
+ok 16 - 429（帶 Retry-After）→ rate_limited；repos 請求被限流也一樣
+  ---
+  duration_ms: 1.641125
+  type: 'test'
+  ...
+# Subtest: 403 但不是限流（沒有限流標頭）→ fetch_failed
+ok 17 - 403 但不是限流（沒有限流標頭）→ fetch_failed
+  ---
+  duration_ms: 1.370083
+  type: 'test'
+  ...
+# Subtest: 404 → not_found
+ok 18 - 404 → not_found
+  ---
+  duration_ms: 2.050875
+  type: 'test'
+  ...
+# Subtest: 200 但內容是 HTML（代理／登入頁）→ fetch_failed
+ok 19 - 200 但內容是 HTML（代理／登入頁）→ fetch_failed
+  ---
+  duration_ms: 1.013208
+  type: 'test'
+  ...
+# Subtest: repos 回的不是陣列 → fetch_failed
+ok 20 - repos 回的不是陣列 → fetch_failed
+  ---
+  duration_ms: 1.2555
+  type: 'test'
+  ...
+# Subtest: 逾時／中止（AbortError、TimeoutError）與網路錯誤 → fetch_failed
+ok 21 - 逾時／中止（AbortError、TimeoutError）與網路錯誤 → fetch_failed
+  ---
+  duration_ms: 0.852291
+  type: 'test'
+  ...
+# Subtest: 成功：fork 的 repo 不計入 topLanguages，技能依主要語言比對，結果快取 10 分鐘
+ok 22 - 成功：fork 的 repo 不計入 topLanguages，技能依主要語言比對，結果快取 10 分鐘
+  ---
+  duration_ms: 3.526875
   type: 'test'
   ...
 # Subtest: 能力分：基準 35
-ok 13 - 能力分：基準 35
+ok 23 - 能力分：基準 35
   ---
-  duration_ms: 0.47425
+  duration_ms: 0.949375
   type: 'test'
   ...
 # Subtest: 能力分：各項加權與上限
-ok 14 - 能力分：各項加權與上限
+ok 24 - 能力分：各項加權與上限
   ---
-  duration_ms: 3.008208
+  duration_ms: 5.729958
   type: 'test'
   ...
 # Subtest: 能力分：夾在 30–98
-ok 15 - 能力分：夾在 30–98
+ok 25 - 能力分：夾在 30–98
   ---
-  duration_ms: 0.106209
+  duration_ms: 0.290959
   type: 'test'
   ...
 # Subtest: 聚類係數：三角形 = 1
-ok 16 - 聚類係數：三角形 = 1
+ok 26 - 聚類係數：三角形 = 1
   ---
-  duration_ms: 0.410958
+  duration_ms: 1.134792
   type: 'test'
   ...
 # Subtest: 聚類係數：路徑 = 0
-ok 17 - 聚類係數：路徑 = 0
+ok 27 - 聚類係數：路徑 = 0
   ---
-  duration_ms: 2.630042
+  duration_ms: 6.165958
   type: 'test'
   ...
 # Subtest: 聚類係數：孤立點與 degree 1 的節點記 0 並計入平均（標準定義）
-ok 18 - 聚類係數：孤立點與 degree 1 的節點記 0 並計入平均（標準定義）
+ok 28 - 聚類係數：孤立點與 degree 1 的節點記 0 並計入平均（標準定義）
   ---
-  duration_ms: 0.148291
+  duration_ms: 0.388875
   type: 'test'
   ...
 # Subtest: 雙信號模擬：選出三人隊（三角形）時聚類 > 0，且兩種信號可區分
-ok 19 - 雙信號模擬：選出三人隊（三角形）時聚類 > 0，且兩種信號可區分
+ok 29 - 雙信號模擬：選出三人隊（三角形）時聚類 > 0，且兩種信號可區分
   ---
-  duration_ms: 0.584833
+  duration_ms: 1.498792
   type: 'test'
   ...
 # Subtest: 雙信號模擬：沒有合格假設時不加邊
-ok 20 - 雙信號模擬：沒有合格假設時不加邊
+ok 30 - 雙信號模擬：沒有合格假設時不加邊
   ---
-  duration_ms: 0.046125
+  duration_ms: 0.133667
   type: 'test'
   ...
 # Subtest: 門檻常數：雷達 50、優先 60
-ok 21 - 門檻常數：雷達 50、優先 60
+ok 31 - 門檻常數：雷達 50、優先 60
   ---
-  duration_ms: 0.292583
+  duration_ms: 0.653833
   type: 'test'
   ...
 # Subtest: pairScores 依視角對調 mine / theirs
-ok 22 - pairScores 依視角對調 mine / theirs
+ok 32 - pairScores 依視角對調 mine / theirs
   ---
-  duration_ms: 0.327958
+  duration_ms: 0.682167
   type: 'test'
   ...
 # Subtest: pairScores：缺報告或 score 格式不符時為 null
-ok 23 - pairScores：缺報告或 score 格式不符時為 null
+ok 33 - pairScores：缺報告或 score 格式不符時為 null
   ---
-  duration_ms: 0.101583
+  duration_ms: 0.1845
   type: 'test'
   ...
 # Subtest: radarBand：看雙方較低分
-ok 24 - radarBand：看雙方較低分
+ok 34 - radarBand：看雙方較低分
   ---
-  duration_ms: 0.054666
+  duration_ms: 0.113792
   type: 'test'
   ...
 # Subtest: bothPass：雙方都 ≥ 60
-ok 25 - bothPass：雙方都 ≥ 60
+ok 35 - bothPass：雙方都 ≥ 60
   ---
-  duration_ms: 0.079167
+  duration_ms: 0.172625
   type: 'test'
   ...
 # Subtest: latestRunPerPeer：每位對象取最新一筆（不看分數）
-ok 26 - latestRunPerPeer：每位對象取最新一筆（不看分數）
+ok 36 - latestRunPerPeer：每位對象取最新一筆（不看分數）
   ---
-  duration_ms: 0.117542
+  duration_ms: 0.258709
+  type: 'test'
+  ...
+# Subtest: compiled.github（DB／LLM／請求本文）一律丟掉：sanitizeProfile、publicProfile、profileFromRow
+ok 37 - compiled.github（DB／LLM／請求本文）一律丟掉：sanitizeProfile、publicProfile、profileFromRow
+  ---
+  duration_ms: 2.800958
+  type: 'test'
+  ...
+# Subtest: verification row 是唯一來源：注入後一路傳遞保留，JSON 反序列化後失效
+ok 38 - verification row 是唯一來源：注入後一路傳遞保留，JSON 反序列化後失效
+  ---
+  duration_ms: 0.757375
+  type: 'test'
+  ...
+# Subtest: 互盤報告：偽造的 compiled.github 不會變成「GitHub 驗證」理由
+ok 39 - 互盤報告：偽造的 compiled.github 不會變成「GitHub 驗證」理由
+  ---
+  duration_ms: 2.779583
   type: 'test'
   ...
 # Subtest: RETAIN：決策值原樣進入報告 → retained
-ok 27 - RETAIN：決策值原樣進入報告 → retained
+ok 40 - RETAIN：決策值原樣進入報告 → retained
   ---
-  duration_ms: 0.776792
+  duration_ms: 2.022625
   type: 'test'
   ...
 # Subtest: RETAIN：0–100 換算被 25–97 夾限 → 不保留
-ok 28 - RETAIN：0–100 換算被 25–97 夾限 → 不保留
+ok 41 - RETAIN：0–100 換算被 25–97 夾限 → 不保留
   ---
-  duration_ms: 0.314375
+  duration_ms: 0.642791
   type: 'test'
   ...
 # Subtest: RETAIN：規則覆寫決策層（同角色群強制 roleOverlap）→ 不保留
-ok 29 - RETAIN：規則覆寫決策層（同角色群強制 roleOverlap）→ 不保留
+ok 42 - RETAIN：規則覆寫決策層（同角色群強制 roleOverlap）→ 不保留
   ---
-  duration_ms: 0.125958
+  duration_ms: 0.1815
   type: 'test'
   ...
 # Subtest: RETAIN：遠端逐題退回規則算不保留；規則層本身直通算保留
-ok 30 - RETAIN：遠端逐題退回規則算不保留；規則層本身直通算保留
+ok 43 - RETAIN：遠端逐題退回規則算不保留；規則層本身直通算保留
   ---
-  duration_ms: 0.07475
+  duration_ms: 0.114
   type: 'test'
   ...
 # Subtest: 假設 ID 由排序後的成員 id 組成（順序無關）
-ok 31 - 假設 ID 由排序後的成員 id 組成（順序無關）
+ok 44 - 假設 ID 由排序後的成員 id 組成（順序無關）
   ---
-  duration_ms: 0.775625
+  duration_ms: 2.193417
   type: 'test'
   ...
 # Subtest: 硬約束：分數 ≥ 60、無角色缺口、無死鎖
-ok 32 - 硬約束：分數 ≥ 60、無角色缺口、無死鎖
+ok 45 - 硬約束：分數 ≥ 60、無角色缺口、無死鎖
   ---
-  duration_ms: 2.357333
+  duration_ms: 6.255834
   type: 'test'
   ...
 # Subtest: 不重疊貪婪：分數高者先選、隊友不重複、最多 3 隊、不改動輸入
-ok 33 - 不重疊貪婪：分數高者先選、隊友不重複、最多 3 隊、不改動輸入
+ok 46 - 不重疊貪婪：分數高者先選、隊友不重複、最多 3 隊、不改動輸入
   ---
-  duration_ms: 0.151375
+  duration_ms: 0.324083
   type: 'test'
   ...
 # Subtest: 隊伍理由：目標不一致用專屬文案、不重複、非中文語系不混入模板中文
-ok 34 - 隊伍理由：目標不一致用專屬文案、不重複、非中文語系不混入模板中文
+ok 47 - 隊伍理由：目標不一致用專屬文案、不重複、非中文語系不混入模板中文
   ---
-  duration_ms: 0.786459
+  duration_ms: 2.222542
   type: 'test'
   ...
 # Subtest: 隊伍理由：未公開的角色顯示為隱藏字樣
-ok 35 - 隊伍理由：未公開的角色顯示為隱藏字樣
+ok 48 - 隊伍理由：未公開的角色顯示為隱藏字樣
   ---
-  duration_ms: 0.253375
+  duration_ms: 0.725042
   type: 'test'
   ...
 # Subtest: team_eval RETAIN：規則層直通算保留；遠端有題目退回規則算不保留
-ok 36 - team_eval RETAIN：規則層直通算保留；遠端有題目退回規則算不保留
+ok 49 - team_eval RETAIN：規則層直通算保留；遠端有題目退回規則算不保留
   ---
-  duration_ms: 0.066083
+  duration_ms: 0.231917
   type: 'test'
   ...
-1..36
-# tests 36
+# Subtest: 重新組隊：只收回我上一輪發起、沒有其他真人同意的提案
+ok 50 - 重新組隊：只收回我上一輪發起、沒有其他真人同意的提案
+  ---
+  duration_ms: 0.448167
+  type: 'test'
+  ...
+# Subtest: 舊資料的反向重複假設 ID：同一組隊友只留最新一筆
+ok 51 - 舊資料的反向重複假設 ID：同一組隊友只留最新一筆
+  ---
+  duration_ms: 0.264583
+  type: 'test'
+  ...
+1..51
+# tests 51
 # suites 0
-# pass 36
+# pass 51
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 285.416125
+# duration_ms 712.12575
 exit=0 (1s)
 
-## 2) npm run test:e2e（E2E_PORT 默认 3100；开始时间 2026-09-23 08:21:54 PDT）
+## 2) npm run test:e2e（Playwright，E2E_PORT 未设 → 3100）
+$ npm run test:e2e
 
 > siebo-captain@0.1.0 test:e2e
 > playwright test
@@ -271,59 +365,69 @@ No pending migrations to apply.
 Demo data reset. Seed participants preserved.
 Seeded event「EvoTavern」(EVOTAVERN). Seed participants: 9, real accounts re-joined: 0, total users: 9, removed seed-only runs/teams: 0/0
 
-Running 38 tests using 1 worker
+Running 48 tests using 1 worker
 
-  ✓   1 tests/api/api-guards.spec.ts:164:5 › compare：非當事人讀不到也不能重跑；當事人重跑每分鐘 1 次 (181ms)
-  ✓   2 tests/api/api-guards.spec.ts:207:5 › 多工逐字稿串流：非成員 403、參數檢查、已完成的 run 補歷史後關閉 (444ms)
+  ✓   1 tests/api/api-guards.spec.ts:164:5 › compare：非當事人讀不到也不能重跑；當事人重跑每分鐘 1 次 (423ms)
+  ✓   2 tests/api/api-guards.spec.ts:207:5 › 多工逐字稿串流：非成員 403、參數檢查、已完成的 run 補歷史後關閉 (711ms)
   ✓   3 tests/api/api-guards.spec.ts:245:5 › 隊長出發：執行中重送 409 already_running；多工串流一條連線看完全部 run (9.3s)
-  ✓   4 tests/api/api-guards.spec.ts:282:5 › 持續聯絡：真人對真人要對方接受；重複邀請不產生重複資料；未驗證帳號被擋 (1.3s)
-  ✓   5 tests/api/api-guards.spec.ts:350:5 › 組隊：兩位真人都同意才成立；bot 視為已同意；成立後收回其他提案 (847ms)
-  ✓   6 tests/api/api-guards.spec.ts:413:5 › 訪談：訊息長度上限、壞 JSON 回 400 (34ms)
-  ✓   7 tests/api/auth-security.spec.ts:57:5 › 真帳號無法被 sd_uid 冒用（手動塞 cookie 也不行） (92ms)
-  ✓   8 tests/api/auth-security.spec.ts:72:5 › /api/users 只列示範身分、不含真帳號與 email (48ms)
-  ✓   9 tests/api/auth-security.spec.ts:83:5 › POST /api/session：真帳號 403、示範身分可切換、真 session 永遠優先 (71ms)
-  ✓  10 tests/api/auth-security.spec.ts:127:5 › 登入失敗 8 次後第 9 次得 429，換 X-Forwarded-For 也繞不過 (307ms)
-  ✓  11 tests/api/auth-security.spec.ts:180:5 › register 節流：同一 email 15 分鐘第 6 次得 429 (43ms)
-  ✓  12 tests/api/auth-security.spec.ts:194:5 › forgot：不存在的帳號回應與有帳號時同形狀，且不外洩連結 (44ms)
-  ✓  13 tests/api/auth-security.spec.ts:208:5 › PUT /api/profile：不能寫入 github、格式錯誤回 400 (141ms)
-  ✓  14 tests/api/auth-security.spec.ts:293:5 › 跨來源 POST 得 403 bad_origin；同源與 GET 不受影響 (58ms)
-  ✓  15 tests/api/auth-security.spec.ts:317:5 › DELETE /api/me：刪除後 /api/me 為 null、無法再登入；示範身分可刪、種子角色不可刪 (145ms)
-  ✓  16 tests/auth.spec.ts:8:5 › 真帳號：註冊 → 加入場次 → 登出 → 登入 (1.8s)
-  ✓  17 tests/auth.spec.ts:70:5 › 未登入：受保護 API 回 401，需要身分的頁面導回首頁 (1.2s)
-  ✓  18 tests/compare.spec.ts:47:5 › 單體 vs 蜂群對照：跑一次單體 baseline 並顯示取捨表 (10.1s)
-  ✓  19 tests/contacts.spec.ts:8:5 › 持續聯絡：破冰卡保持聯絡 → 隊伍頁清單 → 一對一私訊 (14.8s)
-  ✓  20 tests/decision.spec.ts:60:5 › 三段鏈順序：依 key 與 DECISION_PROVIDER/FALLBACK 組出 Jev→LLM→規則 (0ms)
+  ✓   4 tests/api/api-guards.spec.ts:282:5 › 持續聯絡：真人對真人要對方接受；重複邀請不產生重複資料；未驗證帳號被擋 (1.5s)
+  ✓   5 tests/api/api-guards.spec.ts:350:5 › 組隊：兩位真人都同意才成立；bot 視為已同意；成立後收回其他提案 (1.2s)
+  ✓   6 tests/api/api-guards.spec.ts:413:5 › 訪談：訊息長度上限、壞 JSON 回 400 (54ms)
+  ✓   7 tests/api/auth-security.spec.ts:57:5 › 真帳號無法被 sd_uid 冒用（手動塞 cookie 也不行） (158ms)
+  ✓   8 tests/api/auth-security.spec.ts:72:5 › /api/users 只列示範身分、不含真帳號與 email (76ms)
+  ✓   9 tests/api/auth-security.spec.ts:83:5 › POST /api/session：真帳號 403、示範身分可切換、真 session 永遠優先 (133ms)
+  ✓  10 tests/api/auth-security.spec.ts:127:5 › 登入失敗 8 次後第 9 次得 429，換 X-Forwarded-For 也繞不過 (529ms)
+  ✓  11 tests/api/auth-security.spec.ts:180:5 › register 節流：同一 email 15 分鐘第 6 次得 429 (82ms)
+  ✓  12 tests/api/auth-security.spec.ts:194:5 › forgot：不存在的帳號回應與有帳號時同形狀，且不外洩連結 (79ms)
+  ✓  13 tests/api/auth-security.spec.ts:208:5 › PUT /api/profile：不能寫入 github、格式錯誤回 400 (255ms)
+  ✓  14 tests/api/auth-security.spec.ts:293:5 › 跨來源 POST 得 403 bad_origin；同源與 GET 不受影響 (108ms)
+  ✓  15 tests/api/auth-security.spec.ts:317:5 › DELETE /api/me：刪除後 /api/me 為 null、無法再登入；示範身分可刪、種子角色不可刪 (255ms)
+  ✓  16 tests/auth.spec.ts:8:5 › 真帳號：註冊 → 加入場次 → 登出 → 登入 (2.3s)
+  ✓  17 tests/auth.spec.ts:70:5 › 未登入：受保護 API 回 401，需要身分的頁面導回首頁 (2.1s)
+  ✓  18 tests/compare.spec.ts:47:5 › 單體 vs 蜂群對照：跑一次單體 baseline 並顯示取捨表 (10.4s)
+  ✓  19 tests/contacts.spec.ts:8:5 › 持續聯絡：破冰卡保持聯絡 → 隊伍頁清單 → 一對一私訊 (14.6s)
+  ✓  20 tests/decision.spec.ts:60:5 › 三段鏈順序：依 key 與 DECISION_PROVIDER/FALLBACK 組出 Jev→LLM→規則 (1ms)
   ✓  21 tests/decision.spec.ts:76:5 › fallback 實際穿過三段：Jev 401 → LLM 接手；LLM 壞 JSON → 規則；Jev 連不上 → 規則 (1ms)
-  ✓  22 tests/decision.spec.ts:100:5 › 覆蓋不足重試：第 1 次缺題 → 只重打缺漏題並補齊（retries=1、fallbacks=0） (0ms)
+  ✓  22 tests/decision.spec.ts:100:5 › 覆蓋不足重試：第 1 次缺題 → 只重打缺漏題並補齊（retries=1、fallbacks=0） (1ms)
   ✓  23 tests/decision.spec.ts:111:5 › 逐題 fallback：不合法的那一題退回規則，其餘採用 Jev 答案 (1ms)
   ✓  24 tests/decision.spec.ts:122:5 › 斷路器：連續 3 次 Jev 失敗後第 4 次直接跳過（不再發請求） (0ms)
   ✓  25 tests/decision.spec.ts:133:5 › 逾時涵蓋讀 body，且 hybrid 報告路徑帶 decisionSource=jev 與規則對照分 (1ms)
-  ✓  26 tests/decision.spec.ts:156:5 › jev-smoke CLI：無 key 用本機規則；壞 key 打黑洞位址失敗後退回規則（不連外） (468ms)
-  ✓  27 tests/dynamic-i18n.spec.ts:8:5 › 動態內容四語系：隊長訪談回覆隨語系切換 (169ms)
-  ✓  28 tests/evomap.spec.ts:18:5 › EvoMap 預設 opt-out：狀態可查、動作限管理者、UI 標示 OFF (409ms)
-  ✓  29 tests/evomap.spec.ts:51:5 › EvoMap：一般真帳號（不在管理者清單）也是 403 (47ms)
-  ✓  30 tests/hackathon.spec.ts:9:5 › 組隊局：隊長出發 → 隊伍提案 → 加入 → 團隊聊天 (18.1s)
-  ✓  31 tests/i18n-compare.spec.ts:53:5 › /compare 在简中與 EN 模式下沒有繁中殘留 (10.2s)
-  ✓  32 tests/i18n-content.spec.ts:8:5 › 動態內容多語系：EN 模式下隊長對談與報告為英文 (10.0s)
-  ✓  33 tests/i18n.spec.ts:3:5 › 多語系：繁中預設 → EN → 简中 → 日本語，重載後保留 (428ms)
-  ✓  34 tests/mobile.spec.ts:18:5 › 行動裝置：底部 Dock 單列導覽、各頁無水平捲動 (919ms)
-  ✓  35 tests/network.spec.ts:25:5 › 帳本記帳 → 網絡圖 → 社交/能力信號對照 (15.4s)
-  ✓  36 tests/register-journey.spec.ts:14:5 › 註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼重設 (19.8s)
-  ✓  37 tests/swarm.spec.ts:20:5 › 蜂群 Part 覆蓋 + 假設評估式組隊 (10.9s)
-  ✓  38 tests/swarm.spec.ts:81:5 › 故障演練：Part 首次失敗 → R1 重試接力，run 仍完整 6/6 (10.1s)
+  ✓  26 tests/decision.spec.ts:156:5 › jev-smoke CLI：無 key 用本機規則；壞 key 打黑洞位址失敗後退回規則（不連外） (918ms)
+  ✓  27 tests/dynamic-i18n.spec.ts:8:5 › 動態內容四語系：隊長訪談回覆隨語系切換 (408ms)
+  ✓  28 tests/evomap-contract.spec.ts:47:7 › EvoMap 資產組裝 › 0 隊：Capsule/Event outcome=failed、沒有 success_streak 與 execution_trace (7ms)
+  ✓  29 tests/evomap-contract.spec.ts:86:7 › EvoMap 資產組裝 › 有隊伍：outcome=success、分數 0–1、execution_trace 原樣帶入、仍無 success_streak (5ms)
+  ✓  30 tests/evomap-contract.spec.ts:189:7 › EvoMap 封包（本機 stub，不外連） › validate / publish：路徑、封包、Bearer、資產原樣且內容定址 (37ms)
+  ✓  31 tests/evomap-contract.spec.ts:221:7 › EvoMap 封包（本機 stub，不外連） › hello 不帶 Bearer；fetch 帶 Bearer 且預設 search_only (19ms)
+  ✓  32 tests/evomap-contract.spec.ts:244:7 › EvoMap 封包（本機 stub，不外連） › 沒有 node secret 就不送 Authorization；Hub 回失敗時 validationPassed=false (12ms)
+  ✓  33 tests/evomap.spec.ts:18:5 › EvoMap 預設 opt-out：狀態可查、動作限管理者、UI 標示 OFF (823ms)
+  ✓  34 tests/evomap.spec.ts:51:5 › EvoMap：一般真帳號（不在管理者清單）也是 403 (125ms)
+  ✓  35 tests/fallback.spec.ts:72:5 › real 模式 LLM 不通：首個提問 Part 退回本機、之後降級，run 仍 completed，UI 標 LOCAL-FB (3.8s)
+  ✓  36 tests/fallback.spec.ts:129:5 › 沒有退路的 Part（team_eval）：一直失敗 → SwarmPart failed，錯誤往上拋 (498ms)
+  ✓  37 tests/hackathon.spec.ts:9:5 › 組隊局：隊長出發 → 隊伍提案 → 加入 → 團隊聊天 (18.7s)
+  ✓  38 tests/i18n-compare.spec.ts:30:5 › /compare 在简中與 EN 模式下沒有繁中殘留 (10.5s)
+  ✓  39 tests/i18n-content.spec.ts:8:5 › 動態內容多語系：EN 模式下隊長對談與報告為英文 (10.4s)
+  ✓  40 tests/i18n-pages.spec.ts:76:7 › cn：/agent、/teams、/people 沒有繁中殘留 (11.5s)
+  ✓  41 tests/i18n-pages.spec.ts:76:7 › en：/agent、/teams、/people 沒有中日文殘留 (11.6s)
+  ✓  42 tests/i18n-pages.spec.ts:76:7 › ja：/agent、/teams、/people 沒有简中／繁中殘留 (11.7s)
+  ✓  43 tests/i18n.spec.ts:3:5 › 多語系：繁中預設 → EN → 简中 → 日本語，重載後保留 (661ms)
+  ✓  44 tests/mobile.spec.ts:18:5 › 行動裝置：底部 Dock 單列導覽、各頁無水平捲動 (1.3s)
+  ✓  45 tests/network.spec.ts:25:5 › 帳本記帳 → 網絡圖 → 社交/能力信號對照 (15.8s)
+  ✓  46 tests/register-journey.spec.ts:14:5 › 註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼重設 (20.8s)
+  ✓  47 tests/swarm.spec.ts:20:5 › 蜂群 Part 覆蓋 + 假設評估式組隊 (11.3s)
+  ✓  48 tests/swarm.spec.ts:81:5 › 故障演練：Part 首次失敗 → R1 重試接力，run 仍完整 6/6 (10.4s)
 
-  38 passed (2.4m)
-npm run test:e2e  49.17s user 5.82s system 38% cpu 2:23.75 total
-exit=0
+  48 passed (3.3m)
+exit=0 (197s)
 
 ## 3) 跑完后的隔离检查
 ### prisma/dev.db（mtime / 大小 / sha1 / 各表笔数）— 测试前
-Sep 23 02:50:38 2026 1790157038 1306624
-b3a546c7d079086b2247869cc242b2fe213d9fce  prisma/dev.db
-AgentProfile=9 Event=1 EventMember=9 LedgerEvent=6 MatchRun=10 SoloBaseline=1 SwarmPart=2647 Team=5 TeamMember=15 User=9 
+Sep 23 08:37:36 2026 1790177856 1306624
+2678077718012ce6849bada0d4f81056ab66a533  prisma/dev.db
+AgentProfile=9 AuthToken=0 ConnectMessage=0 Connection=0 Event=1 EventMember=9 Icebreaker=0 LedgerEvent=6 MatchRun=10 Session=0 SoloBaseline=1 SwarmPart=97 Team=5 TeamMember=15 TeamMessage=0 User=9
 ### prisma/dev.db — 测试后
-Sep 23 02:50:38 2026 1790157038 1306624
-b3a546c7d079086b2247869cc242b2fe213d9fce  prisma/dev.db
-AgentProfile=9 Event=1 EventMember=9 LedgerEvent=6 MatchRun=10 SoloBaseline=1 SwarmPart=2647 Team=5 TeamMember=15 User=9 
+Sep 23 08:37:36 2026 1790177856 1306624
+2678077718012ce6849bada0d4f81056ab66a533  prisma/dev.db
+AgentProfile=9 AuthToken=0 ConnectMessage=0 Connection=0 Event=1 EventMember=9 Icebreaker=0 LedgerEvent=6 MatchRun=10 Session=0 SoloBaseline=1 SwarmPart=97 Team=5 TeamMember=15 TeamMessage=0 User=9
 ### 结果：完全相同（mtime、sha1、笔数都没变）
+### git status --short（测试前）：空
 ### git status --short（测试后）：空（shots/ 未被改写；tsconfig.json 由 tests/global-teardown.ts 还原）

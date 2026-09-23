@@ -306,20 +306,23 @@ src/
     auth.ts session.ts gate.ts rateLimit.ts costGuard.ts http.ts sse.ts bus.ts
     github.ts profile.ts content.ts i18n*.ts locale.ts personas.ts card.ts client.tsx
   components/          # AppHeader / RunStream / ScoreRing / LocaleSwitcher / Icons
-prisma/                # schema、單一 baseline migration、seed、reset-demo、db-path
-scripts/               # ensure-env、db-rebaseline、demo-snapshot/restore、evomap-*、jev-smoke、verify-decision
+prisma/                # schema、單一 baseline migration、seed、reset-demo、db-path、orphans
+scripts/               # ensure-env、db-rebaseline、db-prune-orphans、demo-snapshot/restore、evomap-*、jev-smoke、verify-decision、secret-scan
 tests/
-  *.spec.ts            # E2E：auth compare contacts decision dynamic-i18n evomap hackathon
-                       #      i18n i18n-compare i18n-content mobile network register-journey swarm
+  *.spec.ts            # E2E：auth compare contacts decision dynamic-i18n evomap evomap-contract fallback
+                       #      hackathon i18n i18n-compare i18n-content i18n-pages mobile network
+                       #      register-journey swarm
   api/*.spec.ts        # API 層：api-guards auth-security
-  unit/*.test.ts       # 單元（node:test）：decide engine-misc ledger network pairGate retain teamAssembler
-  global-setup.ts helpers.ts
+  unit/*.test.ts       # 單元（node:test）：append-event decide engine-misc github ledger network
+                       #      pairGate profile-github retain teamAssembler
+  probes/              # fallback.spec 用的子行程探針（real 模式引擎、端點全指向黑洞）
+  global-setup.ts global-teardown.ts helpers.ts
 shots/                 # 靜態展示截圖（多數早於修正版，細節可能與現況不同；測試不會再覆寫，測試截圖寫到 test-results/）
 ```
 
 ## 🧪 測試
 
-E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測試在 `tests/unit/*.test.ts`（node:test）。目前 E2E 38 項、單元 36 項全數通過（commit `599b0e3`，完整輸出見 `audit/evidence/test-run.txt`）；逐項斷言見 [AUDIT §2](./AUDIT.md)。
+E2E 在 `tests/*.spec.ts` 與 `tests/api/*.spec.ts`（Playwright），單元測試在 `tests/unit/*.test.ts`（node:test）。目前 E2E 48 項（19 個 spec 檔）、單元 51 項（10 個檔）全數通過（commit `85ab163`，完整輸出見 `audit/evidence/test-run.txt`）；逐項斷言見 [AUDIT §2](./AUDIT.md)。
 
 - E2E 用獨立測試 DB 與 mock 設定（見 `playwright.config.ts`），外部端點一律指向不可達的 `127.0.0.1:9`；測試截圖與下載檔寫到 `test-results/`（不進版控）
 - `tests/decision.spec.ts`：透過 `scripts/verify-decision.ts` 在本機 stub server 上驗證三段鏈實際回退、覆蓋不足重打、逐題 fallback、斷路器與逾時（完全離線）

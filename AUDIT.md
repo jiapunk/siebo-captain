@@ -3,7 +3,7 @@
 > EvoTavern 进化酒馆黑客松 · 深圳站 ｜ 赛道 **04 多 Agent 蜂群协作 | SECTION 9**
 > 本文件让第三方（评委 / 审计）**逐项独立复核赛博队长（本仓库）的主张**。每条主张都附「如何复现」与「预期输出」，机读证据在 `audit/evidence/`。
 > 赛博月老（surrodate）是另一个仓库，本文件只列索引；它的数据不在本次修正范围内，未重新复核。
-> **修正版说明**：本版依 2026-09-23 的全面审查修正了代码与文件，只写代码真正做得到的事。数值与测试数已由修正版（commit `599b0e3`）实测填入；`audit/evidence/` 的静态闸门、测试、Live API 与全新 clone 证据都已用修正版重新生成（2026-09-23 08:25 PDT），`evomap.txt` 与 `demo-assets-qa.txt` 仍是修正前的记录（见 §4）。
+> **修正版说明**：本版依 2026-09-23 的全面审查修正了代码与文件，只写代码真正做得到的事。数值与测试数已由修正版（commit `85ab163`）实测填入；`audit/evidence/` 的静态闸门、测试、Live API 与全新 clone 证据都已用修正版重新生成（2026-09-23 10:08 PDT），`evomap.txt` 与 `demo-assets-qa.txt` 仍是修正前的记录（见 §4）。
 
 ---
 
@@ -14,8 +14,8 @@
 | 1 | 打开 <https://github.com/jiapunk/siebo-captain> | 公开可访问、代码完整 |
 | 2 | `git clone` → `npm install` → `npm run setup` | 没有 `.env` 时自动从 `.env.example` 建立（mock 模式、密钥空白）→ `prisma migrate deploy` → 种子成功（SQLite） |
 | 3 | `npm run typecheck && npm run lint && npm run build` | 0 error（`typecheck` = `next typegen && tsc --noEmit`；lint 0 error / 0 warning；build 无 whole-project tracing 警告） |
-| 4 | `npm run test:unit` | 36 passed（7 个文件，node:test） |
-| 5 | `npx playwright install chromium && npm run test:e2e` | 38 passed（16 个 spec 文件，约 2.5 分钟）；使用独立测试 DB（`prisma/test-3100.db`），全程 mock、不外连，不会动到 demo 数据；跑完工作区保持干净 |
+| 4 | `npm run test:unit` | 51 passed（10 个文件，node:test） |
+| 5 | `npx playwright install chromium && npm run test:e2e` | 48 passed（19 个 spec 文件，约 3.5 分钟）；使用独立测试 DB（`prisma/test-3100.db`），全程 mock、不外连，不会动到 demo 数据；跑完工作区保持干净 |
 | 6 | `npm run dev` → <http://localhost:3000> | 以示范身份 Demo阿飛 进入 |
 | 7 | 读 `audit/evidence/*` | 静态 / 测试 / Live / 全新 clone / EvoMap / 物料证据原文（见 §4 的说明） |
 
@@ -30,7 +30,7 @@
 | 场景 | 黑客松组队破冰 | 约会配对 |
 | 一句话 | 你的队长先替你去破冰，双方都认可才组队 | 你的月老先替你去相亲，过关才见面 |
 | 仓库 | [jiapunk/siebo-captain](https://github.com/jiapunk/siebo-captain) | [jiapunk/surrodate](https://github.com/jiapunk/surrodate) |
-| 测试 | E2E 38 + 单元 36 | 见其仓库（本次未复核） |
+| 测试 | E2E 48 + 单元 51 | 见其仓库（本次未复核） |
 | 语言 | 繁中 / 简中 / EN / 日本語 | 繁中（UI） |
 
 **赛博队长的引擎要素**
@@ -46,7 +46,7 @@
 
 ### 2.1 赛博队长
 
-> 本表对应修正版（commit `599b0e3`）的 spec 与单元测试：E2E 38 项、单元 36 项全数通过（`audit/evidence/test-run.txt`）。
+> 本表对应修正版（commit `85ab163`）的 spec 与单元测试：E2E 48 项、单元 51 项全数通过（`audit/evidence/test-run.txt`）。
 > E2E 在 `tests/*.spec.ts` 与 `tests/api/*.spec.ts`（Playwright），单元测试在 `tests/unit/*.test.ts`（node:test）。
 
 | 功能 | 测试文件 | 断言要点 |
@@ -57,15 +57,17 @@
 | API 守门 | `api/api-guards.spec.ts` | `/compare` 非当事人读不到也不能重跑、当事人每分钟 1 次；多工逐字稿串流的权限与参数检查；执行中重送「队长出发」得 409 `already_running`；真人对真人联络需对方接受、重复邀请不重复建立、未验证账号被挡；组队需两位真人都同意、bot 视为已同意；访谈长度上限与坏 JSON 得 400 |
 | 双方门槛 | `unit/pairGate.test.ts` | 门槛常数 50 / 60；依视角对调 mine / theirs；缺报告为 null；雷达分级看较低分；`bothPass` 双方 ≥60；每位对象只取最新一笔 run |
 | 决策层 | `decision.spec.ts` + `unit/decide.test.ts` | E2E（完全离线：`scripts/verify-decision.ts` 在本机 stub server 上用真的 fetch 触发各情境，外部地址一律指向 127.0.0.1:9）：链顺序；fallback 实际穿过三段（Jev 401 → LLM 接手、LLM 坏 JSON → 规则、Jev 连不上 → 规则）；覆盖不足只重打缺漏题；逐题 fallback；断路器连续 3 次后跳过；超时涵盖读 body 且 hybrid 报告带 `decisionSource=jev` 与规则对照分；`jev-smoke` CLI 不连外。单元：答案范围与枚举验证、逐题 fallback 且只重打缺漏题、第 2 次失败时保留第 1 次的部分答案、远端 0 题有效时 source 为 mock、超时涵盖读 body、断路器（连续 3 次才打开、成功归零、半开只放一个探测、并行时只有一个真的送出） |
-| 蜂群 P0 / P1 | `swarm.spec.ts` + `unit/retain.test.ts` + `unit/teamAssembler.test.ts` | E2E：run 卡显示 `PARTS 6/6`、`RETAIN`、`HYPOTHESES n` 与候选队伍；勾「故障演练」后 Part 首次失败 → `R1` 重试接力，run 仍完整 6/6。单元：RETAIN 量测（直通保留、夹限 / 规则覆写 / 逐题退回不保留）；假设 ID 与顺序无关；硬约束；不重叠贪婪最多 3 队；team_eval 的 RETAIN |
+| 蜂群 P0 / P1 | `swarm.spec.ts` + `unit/retain.test.ts` + `unit/teamAssembler.test.ts` + `unit/append-event.test.ts` | E2E：run 卡显示 `PARTS 6/6`、`RETAIN`、`HYPOTHESES n` 与候选队伍；勾「故障演练」后 Part 首次失败 → `R1` 重试接力，run 仍完整 6/6。单元：RETAIN 量测（直通保留、夹限 / 规则覆写 / 逐题退回不保留）；假设 ID 与顺序无关；硬约束；不重叠贪婪最多 3 队；team_eval 的 RETAIN；重新组队只收回自己上一轮、没有其他真人同意的提案；旧数据反向重复的假设 ID 同一组队友只留最新一笔；同一个 run 并行追加事件不遗失 |
+| 本机退路与失败分支 | `fallback.spec.ts` | real 模式、LLM 端点指向黑洞：首个提问 Part 退回本机脚本、本场后续 Part 降级，run 仍 completed，指挥台标 `LOCAL-FB`；没有退路的 `team_eval` Part 一直失败 → `SwarmPart` 记 failed、错误往上抛 |
 | Ledger + 网络图 | `network.spec.ts` + `unit/network.test.ts` + `unit/ledger.test.ts` | E2E：组队与聊天后 `/api/network` 有边、有双信号模拟、能力分上升。单元：标准聚类（三角形 = 1、路径 = 0、孤立 / degree 1 记 0 并计入平均）；双信号模拟选出三人队时聚类 > 0 且两种信号可区分；能力分公式、权重上限、夹在 30–98 |
 | 其他引擎规则 | `unit/engine-misc.test.ts` | 候选排序（未互盘真人优先、上限 5）；dealbreakers 默认不外送；`sanitizeProfile` 的型别与长度收敛；mock 团队回复不再丢失语系 |
+| GitHub 公开资料比对 | `unit/github.test.ts` + `unit/profile-github.test.ts` | 限流（403 + `X-RateLimit-Remaining=0`、429 + `Retry-After`）→ `rate_limited`；404 → `not_found`；HTML / 非数组 / 超时 → `fetch_failed`；fork 不计入语言、结果缓存 10 分钟；档案里伪造的 `compiled.github` 一律丢弃，只有比对记录能成为「GitHub 验证」理由 |
 | 持续联络（对模拟对象） | `contacts.spec.ts` | 破冰卡「保持联络」→ 队伍页清单 → 1:1 私信往返 |
-| 四语系 | `i18n.spec.ts` / `i18n-content.spec.ts` / `dynamic-i18n.spec.ts` / `i18n-compare.spec.ts` | 界面四语系切换与重载保留；EN 模式下对谈与报告为英文；访谈回复随语系切换；`/compare` 在简中与 EN 模式下没有繁中残留 |
+| 四语系 | `i18n.spec.ts` / `i18n-content.spec.ts` / `dynamic-i18n.spec.ts` / `i18n-compare.spec.ts` / `i18n-pages.spec.ts` | 界面四语系切换与重载保留；EN 模式下对谈与报告为英文；访谈回复随语系切换；`/compare` 在简中与 EN 模式下没有繁中残留；`/agent`（含展开的逐字稿与报告）、`/teams`（含网络面板）、`/people` 在简中无繁体字、EN 无中日文、日文无简体字与日文不用的繁体字且有假名（只排除种子档案里用户自填的文字；角色标签必须在地化） |
 | 行动版 | `mobile.spec.ts` | 390×844 视窗下 Dock 单列导览、各页无水平卷动 |
-| 组队局主流程 | `hackathon.spec.ts` | 出发 → 逐字稿 → 破冰雷达 / 破冰卡 → 分享图 → GitHub 公开资料比对（mock）→ 队伍提案 → 加入 → 群聊 |
+| 组队局主流程 | `hackathon.spec.ts` | 出发 → 逐字稿（每场 completed、≥11 个事件，双方队长的问答气泡是实际的问与答）→ 破冰雷达 / 破冰卡 → 分享图 → GitHub 公开资料比对（mock）→ 队伍提案 → 加入 → 群聊 |
 | 单体 vs 蜂群 | `compare.spec.ts` | 跑一次单体 baseline，显示取舍表与五维对照 |
-| EvoMap opt-in | `evomap.spec.ts` | 默认关闭（`EVOMAP_ENABLED=0`）、`GET /api/evomap` 可查、UI 标示 OFF；POST 只限管理员（匿名、示范身份、不在管理员清单的真账号都得 403） |
+| EvoMap opt-in | `evomap.spec.ts` + `evomap-contract.spec.ts` | 默认关闭（`EVOMAP_ENABLED=0`）、`GET /api/evomap` 可查、UI 标示 OFF；POST 只限管理员（匿名、示范身份、不在管理员清单的真账号都得 403）。协定契约（本机 stub，不连 Hub）：0 队时 outcome=failed、没有 `success_streak`；`execution_trace` 原样来自传入的证据；asset_id 用独立实作重算 sha256 核对；hello 不带 Bearer、fetch / validate / publish 带 Bearer；没有 node secret 就不送 Authorization |
 
 **未被自动化测试覆盖的主张**（如实列出）：对真实 Jev / LLM 服务的调用（需要付费 key，只能手动验证；自动化测试只用本机 stub 与黑洞地址验证回退行为）。
 
@@ -77,7 +79,7 @@
 
 ## 3. 实测数据（含复现方式）
 
-> 以下数值是修正版 server（commit `599b0e3`，mock 设定）读取 demo 数据库副本的实测结果（2026-09-23，原文见 `audit/evidence/live-api.txt`）。互盘、队伍与 `/compare` 的来源记录是 2026-09-22 在 hybrid 模式（真 Jev + 真 LLM）下由修正前代码写入的记录；修正版负责读取与重新计算（聚类、双信号模拟、Δ、compare 分栏都是修正版算法）。
+> 以下数值是修正版 server（commit `85ab163`，mock 设定）读取 demo 数据库副本的实测结果（2026-09-23 09:56–09:58 PDT，原文见 `audit/evidence/live-api.txt`）。互盘、队伍与 `/compare` 的来源记录是 2026-09-22 在 hybrid 模式（真 Jev + 真 LLM）下由修正前代码写入的记录；修正版负责读取与重新计算（聚类、双信号模拟、Δ、compare 分栏都是修正版算法）。
 > **可重现性**：Jev / LLM 相关数字需要 `LLM_PROVIDER=hybrid` 与付费的 `JEV_API_KEY`、`LLM_API_KEY`；fresh clone 默认是 mock 模式，只会得到规则层的确定性数字（`decisionSource=mock`）。LLM 输出有随机性，即使有 key 也不会得到完全相同的数字。
 
 | 指标 | 数值 | 复现方式 | 定义 |
@@ -86,7 +88,7 @@
 | 决策层 vs 规则层 Δ | +6 / +14 / +12 / +12 / +14，平均 **+11.6**（n = 5） | 同上，`score - ruleScore` | 与手写规则的分歧，不是决策层的「贡献」 |
 | 蜂群覆盖 / RETAIN | 每场 `PARTS 6/6`、retries 0、fallbacks 0；修正版新跑的 4 场 `RETAIN 8/8`（mock）。demo 数据里 2026-09-22 的 5 场由修正前代码写入，没有 `retention`，其 `retainedPct=100` 来自旧版旗标，**不算**新定义的量测 | 同上，`parts`（`done`、`retries`、`fallbacks`、`retainedPct`）与 `myReport.retention`（`kept` / `slots`） | RETAIN 只量报告 Part：8 个决策 slot 是否原封不动进入报告（夹限、规则覆写、逐题退回都算不保留）。`retention.kept/slots` 是单份报告；`retainedPct` 是两个报告 Part 中完全保留的比例（只会是 0 / 50 / 100%）；mock 模式规则层直通，恒为全数保留 |
 | 合作网络 | 9 节点 / 6 边 / 平均度 1.33 / 聚类系数 **0.48**（手算核对：(1/3 + 4) / 9 = 0.481） | `GET /api/network` → `metrics` | 标准平均聚类（同 networkx `average_clustering`：degree < 2 的节点记 0 并计入平均）。旧证据的 0.87 是排除孤立节点的旧算法，已作废 |
-| 双信号模拟 | 16 个假设；social：8 边（+2）、聚类 0.55、第二队选 Kiwi + 里歐；competence：6 边（+0）、聚类 0.48、第二队选 Kiwi + 小滿 —— 两种信号选出不同队伍 | `GET /api/network` → `sim.social` / `sim.competence` | 只用当前用户最新一轮的 team_eval 假设；每队 = 本人 + 两位队友的三角形 |
+| 双信号模拟 | 10 个假设；social：8 边（+2）、聚类 0.55、第二队选 Kiwi + 里歐；competence：6 边（+0）、聚类 0.48、第二队选 Kiwi + 小滿 —— 两种信号选出不同队伍 | `GET /api/network` → `sim.social` / `sim.competence`；`GET /api/teams` → `swarm.hypotheses`（同为 10） | 只用当前用户最新一轮的 team_eval 假设；旧数据里同一组队友有 `t:o:a:b` / `t:o:b:a` 两笔时只算最新一笔（去重前是 16 笔，旧证据的「16 个假设」即此）；每队 = 本人 + 两位队友的三角形 |
 | 单体 vs 蜂群（队长） | 评分步骤：蜂群 `r:A`（Jev）1,492 ms / 1 次调用 vs 单体（LLM，沿用蜂群逐字稿）22,904 ms / 1 次调用；分数 81 vs 76（维度平均差 9.2）；蜂群全流程 46,036 ms（对谈 44,070 ms，不与单体比）；n = 1 场；demo 数据是修正前写入的，没有 token 记录（`tokens` 为 null） | `GET /api/compare?runId=…` → `timing.scoringMs`、`callBreakdown.scoringComparable`、`scoringSource`、`reusesSwarmTranscript` | 单体沿用蜂群已生成的逐字稿，只重做评分；公平可比的是评分步骤；以 A 方视角；每场只有 1 次单体取样 |
 | 单体 vs 蜂群（月老） | 见 surrodate 仓库 | — | 本次未复核 |
 
@@ -94,14 +96,14 @@
 
 ## 4. 证据文件索引（机读原文）
 
-> `static-gates.txt`、`test-run.txt`、`live-api.txt`、`fresh-clone.txt` 已用修正版（commit `599b0e3`，2026-09-23 08:25 PDT）重新生成，都是完整原始输出（未节选）；路径已去识别（`<repo>`、`<scratchpad>`）。
+> `static-gates.txt`、`test-run.txt`、`live-api.txt`、`fresh-clone.txt` 已用修正版（commit `85ab163`，2026-09-23 10:08 PDT）重新生成，都是完整原始输出（未节选）；路径已去识别（`<repo>`、`<scratchpad>`）。
 > 仍是修正前的记录：`evomap.txt`（commit `be773f2`；心跳日志来自旧版 launchd 设定，log 在 `/tmp`）与 `demo-assets-qa.txt`（物料在仓库外）。
 > 旧版证据的已知缺口（节选的测试输出、截断的 build、只扫一把 key 的密钥扫描、旧算法的聚类 0.87）已由新文件取代。
 
 ### 赛博队长 `audit/evidence/`
 | 文件 | 内容 |
 |---|---|
-| `static-gates.txt` | typecheck / lint（含 JSON 统计）/ build 完整输出（含路由表）/ prisma migrate status / 环境（去敏）/ 密钥扫描（`.env` 与 `.env.live` 全部机密值 × 追踪文件与全部 git 历史） |
+| `static-gates.txt` | typecheck / lint（含 JSON 统计）/ build 完整输出（含路由表）/ prisma migrate status / 环境（去敏）/ 密钥扫描（`npm run secret-scan`：`.env` 与 `.env.live` 全部机密值 × 工作树与全部 git 历史） |
 | `test-run.txt` | 单元测试 + Playwright 完整输出，以及跑完后 `prisma/dev.db` 的 mtime / sha1 / 笔数比对 |
 | `live-api.txt` | 修正版 server 的 me / runs / network / teams / events / compare 实测（含 compare 原文）与 mock 新跑的互盘 |
 | `fresh-clone.txt` | 全新 clone、不建 `.env`，依文件跑 install → setup → typecheck → lint → build → test:unit → test:e2e 的逐步 exit、耗时与完整输出 |
@@ -134,7 +136,7 @@
 | 项 | 实际行为 | 证据 |
 |---|---|---|
 | `.env` 未入库 | `git ls-files` 只有 `.env.example`；`.env.example` 全是安全默认值（mock、EvoMap 关闭、密钥空白） | `git ls-files \| grep '\.env'` |
-| 密钥扫描 | `.env` 与 `.env.live` 的全部机密值（LLM / Jev / EvoMap，共 3 把）对 208 个追踪文件与全部 git 历史比对：命中 0；追踪的 `.env*` 只有 `.env.example` | `static-gates.txt` |
+| 密钥扫描 | `npm run secret-scan`：`.env` 与 `.env.live` 的全部机密值（LLM / Jev / EvoMap，共 3 把）对工作树 212 个文件与全部 git 历史（19 个 commit、786 个物件，含二进位 blob）比对：命中 0；追踪的 `.env*` 只有 `.env.example`；只印变量名与命中数，不印值 | `static-gates.txt` |
 | 示范身份切换 | 只能切到**没有 email、没有密码**的示范身份；`sd_uid` 必须对应示范身份才生效；登录真账号时真 session 永远优先；`DEMO_SWITCH=off` 可整个关闭 | `api/auth-security.spec.ts` |
 | 认证闸门 | 受保护 API 未登录回 401；需要身份的页面由前端导回首页 | `auth.spec.ts`、`api/auth-security.spec.ts`、`api/api-guards.spec.ts` |
 | 未验证闸门 | 有 email 但未验证：不能发起配对、组队（产生 / 加入）、联络（发起 / 接受 / 私信）、群聊、破冰卡、`/compare` 重跑（403 `email_unverified`） | `register-journey.spec.ts`、`api/api-guards.spec.ts` |
@@ -183,7 +185,7 @@
 
 | | 赛博队长 |
 |---|---|
-| 证据生成时 commit | 修正版 `599b0e3`（分支 `review-fixes`；之后的提交只更新文件与证据）；`evomap.txt`、`demo-assets-qa.txt` 仍为 `be773f2` |
+| 证据生成时 commit | 修正版 `85ab163`（分支 `review-fixes`；之后的提交只更新文件与证据）；`evomap.txt`、`demo-assets-qa.txt` 仍为 `be773f2` |
 | 数据库迁移 | 1 个 baseline（`20260923000000_baseline`，SQLite / Prisma；旧版 10 个迁移已合并） |
 | 运行时 | Node ≥ 20.9（`package.json` engines）· Next.js 16.3.5 · React 19 · Prisma 6 · TypeScript 5 |
 | 主要依赖 | next、react、@prisma/client、openai；开发：prisma、@playwright/test、tsx、dotenv、eslint |
@@ -201,9 +203,9 @@ npm run setup                    # 没有 .env 时自动从 .env.example 建立 
 npm run typecheck                # next typegen && tsc --noEmit；预期 0 error
 npm run lint                     # 预期 0 errors、0 warnings
 npm run build                    # 预期 build 成功
-npm run test:unit                # 预期 36 passed
+npm run test:unit                # 预期 51 passed
 npx playwright install chromium  # 第一次跑 E2E 需要
-npm run test:e2e                 # 预期 38 passed；独立测试 DB，不会动到 prisma/dev.db
+npm run test:e2e                 # 预期 48 passed；独立测试 DB，不会动到 prisma/dev.db
 npm run dev                      # → http://localhost:3000（示范身份：Demo阿飛）
 ```
 
