@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
+import { latestUniqueHypotheses } from "@/lib/teamAssembler";
 import type { TeamReport } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -26,24 +27,21 @@ export async function GET() {
   });
   const userMap = new Map(users.map((u) => [u.id, u]));
 
-  const evals = await prisma.swarmPart.groupBy({
-    by: ["status"],
-    where: { teamId: `h:${uid}`, kind: "team_eval" },
-    _count: true,
-  });
-  const providers = await prisma.swarmPart.findMany({
-    where: { teamId: `h:${uid}`, kind: "team_eval", provider: { not: null } },
-    select: { provider: true },
-    distinct: ["provider"],
-  });
-  const hypotheses = evals.reduce((a, e) => a + e._count, 0);
+  // 最新一輪的假設（teamId=h:<userId>）；舊資料的反向重複 ID 同一組隊友只算最新一筆，與網絡模擬同一套計數
+  const evals = latestUniqueHypotheses(
+    await prisma.swarmPart.findMany({
+      where: { teamId: `h:${uid}`, kind: "team_eval" },
+      select: { id: true, status: true, provider: true, updatedAt: true },
+    }),
+  );
+  const providers = [...new Set(evals.map((e) => e.provider).filter((p): p is string => !!p))];
 
   return NextResponse.json({
     swarm: {
-      hypotheses,
+      hypotheses: evals.length,
       selected: teams.filter((x) => x.status === "proposed").length,
-      failed: evals.find((e) => e.status === "failed")?._count ?? 0,
-      providers: providers.map((p) => p.provider as string),
+      failed: evals.filter((e) => e.status === "failed").length,
+      providers,
     },
     teams: teams.map((t) => ({
       id: t.id,
