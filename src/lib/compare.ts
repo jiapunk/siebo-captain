@@ -1,18 +1,26 @@
 import { prisma } from "./db";
-import type { HackathonProfile, MatchReport, RunEvent } from "./types";
-import { publicProfile } from "./profile";
+import type { HackathonProfile, MatchReport, RunEvent, VisibilityMap } from "./types";
+import { publicProfile, sanitizeProfile } from "./profile";
+import { LLM_MODE } from "./llm";
+import { withMeter, type CallMeter } from "./llm/meter";
 import * as real from "./llm/real";
 import * as mock from "./llm/mock";
 
 /**
  * 單體 vs 蜂群對照（SECTION 9 賽道要求：對比單一 Agent 與蜂群的質量/速度/成本取捨）
- *   蜂群 = 既有 run 的 6-Part 隔離執行（覆蓋率、保留率、重試、延遲）
- *   單體 = 同一對話紀錄，一次 LLM 呼叫直接產出報告（無隔離、無重試）
+ *   蜂群 = 既有 run 的 6-Part 隔離執行（對談生成 4 Part + 雙方評分 2 Part）
+ *   單體 = 沿用「蜂群已生成的同一份逐字稿」，一次呼叫直接產出 A 方報告（不重新生成對談）
+ *
+ * 公平比較請看 timing.scoringMs（蜂群 r:A 評分 Part vs 單體評分呼叫）；
+ * timing.totalMs 的蜂群值含對談生成與 mock 模式的節奏延遲，和單體不是同一個範圍。
+ * 評分 provider 可能不同（hybrid：蜂群評分走 Jev 決策層、單體走 LLM）→ 見 scoringSource。
  */
 
 export interface SideMetrics {
   source: string; // jev | llm | mock（蜂群為決策層 provider 混合）
+  /** 相容舊欄位：蜂群＝timing.totalMs（全流程牆鐘），單體＝timing.scoringMs */
   latencyMs: number | null;
+  /** 實際嘗試次數（每個 Part／呼叫 = 1 + 重試；mock 也算一次） */
   calls: number;
   retries: number;
   score: number;
@@ -23,6 +31,30 @@ export interface SideMetrics {
   sharedTopics: number;
   fieldsFilled: number;
   fieldsExpected: number;
+  /** 計時分段 */
+  timing: {
+    /** 蜂群：第一個到最後一個事件的牆鐘（含對談生成）；單體：等於 scoringMs */
+    totalMs: number | null;
+    /** 評分步驟：蜂群＝r:A Part 耗時（與單體可比）；單體＝那一次評分呼叫 */
+    scoringMs: number | null;
+    /** 對談生成（q/a 四個 Part）耗時總和；單體＝0（沿用蜂群逐字稿） */
+    transcriptMs: number | null;
+  };
+  /** 呼叫數分列 */
+  callBreakdown: {
+    /** 對談生成的嘗試次數；單體＝0 */
+    transcript: number;
+    /** 評分步驟的嘗試次數（蜂群＝r:A＋r:B） */
+    scoring: number;
+    /** 與單體可比的評分嘗試次數（蜂群只算 r:A） */
+    scoringComparable: number;
+  };
+  /** true＝這一側沒有自己生成對談，沿用蜂群的逐字稿（單體恆為 true） */
+  reusesSwarmTranscript: boolean;
+  /** 評分那一步實際的 provider（蜂群 r:A；單體 llm / mock） */
+  scoringSource: string;
+  /** token 用量（沒有 usage 時為 null） */
+  tokens: { input: number | null; output: number | null };
   extra: Record<string, unknown>;
 }
 
@@ -52,29 +84,23 @@ function fieldsFilled(r: MatchReport): number {
 
 function qaTextFromEvents(events: unknown): string {
   const list = Array.isArray(events) ? (events as RunEvent[]) : [];
-  const qs = list.filter((e) => e.type === "question") as Extract<
-    RunEvent,
-    { type: "question" }
-  >[];
-  const as = list.filter((e) => e.type === "answer") as Extract<
-    RunEvent,
-    { type: "answer" }
-  >[];
   // 事件順序即 A問/B答、B問/A答 交錯；以出現順序重建
   let out = "";
-  let qi = 0;
-  let ai = 0;
   for (const e of list) {
-    if (e.type === "question") {
-      out += `${e.side}問：${qs[qi]?.text ?? ""}\n`;
-      qi++;
-    } else if (e.type === "answer") {
-      out += `${e.side}答：${as[ai]?.text ?? ""}\n`;
-      ai++;
-    }
+    if (e.type === "question") out += `${e.side}問：${e.text ?? ""}\n`;
+    else if (e.type === "answer") out += `${e.side}答：${e.text ?? ""}\n`;
   }
   return out.trim();
 }
+
+const sumOrNull = (xs: (number | null | undefined)[]) => {
+  const v = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) : null;
+};
+const outputTokensOf = (note: string | null) => {
+  const m = /outputTokens=(\d+)/.exec(note ?? "");
+  return m ? Number(m[1]) : null;
+};
 
 export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | null> {
   const run = await prisma.matchRun.findUnique({ where: { id: runId } });
@@ -82,7 +108,7 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
   const report = run.reportA as unknown as MatchReport | null;
   if (!report) return null;
 
-  // 蜂群牆鐘：第一個到最後一個事件的時間差（與單體可比較）
+  // 蜂群牆鐘：第一個到最後一個事件的時間差（含對談生成；mock 模式另含每步 650ms 節奏延遲）
   const evList = Array.isArray(run.events) ? (run.events as RunEvent[]) : [];
   const tsList = evList
     .map((e) => (typeof e.ts === "number" ? e.ts : null))
@@ -93,6 +119,10 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
   const done = parts.filter((p) => p.status === "done").length;
   const failed = parts.filter((p) => p.status === "failed").length;
   const retries = parts.reduce((a, p) => a + p.retries, 0);
+  const attempts = (ps: typeof parts) => ps.reduce((a, p) => a + p.retries + 1, 0);
+  const qaParts = parts.filter((p) => p.kind === "questions" || p.kind === "answers");
+  const reportParts = parts.filter((p) => p.kind === "report");
+  const rA = parts.find((p) => p.id === `r:${runId}:A`) ?? null;
   const measurable = parts.filter((p) => p.confidence !== null || p.provider);
   const lat = parts.filter((p) => p.latencyMs !== null) as { latencyMs: number }[];
   const totalLatency = lat.length
@@ -103,9 +133,9 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
   );
 
   return {
-    source: report.decisionSource ?? providers.join("+") ?? "unknown",
+    source: report.decisionSource ?? (providers.join("+") || "unknown"),
     latencyMs: wallMs ?? totalLatency,
-    calls: parts.length,
+    calls: attempts(parts),
     retries,
     score: report.score,
     verdict: report.verdict,
@@ -115,6 +145,22 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
     sharedTopics: report.sharedTopics?.length ?? 0,
     fieldsFilled: fieldsFilled(report),
     fieldsExpected: FIELDS_EXPECTED,
+    timing: {
+      totalMs: wallMs ?? totalLatency,
+      scoringMs: rA?.latencyMs ?? null,
+      transcriptMs: sumOrNull(qaParts.map((p) => p.latencyMs)),
+    },
+    callBreakdown: {
+      transcript: attempts(qaParts),
+      scoring: attempts(reportParts),
+      scoringComparable: rA ? rA.retries + 1 : 0,
+    },
+    reusesSwarmTranscript: false,
+    scoringSource: rA?.provider ?? report.decisionSource ?? "unknown",
+    tokens: {
+      input: sumOrNull(parts.map((p) => p.inputTokens)),
+      output: sumOrNull(parts.map((p) => outputTokensOf(p.note))),
+    },
     extra: {
       expected: parts.length ? Math.max(parts.length, done + failed) : 0,
       done,
@@ -129,7 +175,25 @@ export async function swarmMetricsForRun(runId: string): Promise<SideMetrics | n
       deltaVsRule:
         report.ruleScore !== undefined ? report.score - report.ruleScore : null,
       measurableParts: measurable.length,
+      fallbackCount: report.fallbackCount ?? null,
+      retention: report.retention ?? null,
     },
+  };
+}
+
+/** 舊版快取的單體結果沒有分段欄位：補上（舊版同樣是沿用蜂群逐字稿、單次評分） */
+function normalizeSolo(m: SideMetrics): SideMetrics {
+  return {
+    ...m,
+    timing: m.timing ?? { totalMs: m.latencyMs, scoringMs: m.latencyMs, transcriptMs: 0 },
+    callBreakdown: m.callBreakdown ?? {
+      transcript: 0,
+      scoring: m.calls,
+      scoringComparable: m.calls,
+    },
+    reusesSwarmTranscript: true,
+    scoringSource: m.scoringSource ?? m.source,
+    tokens: m.tokens ?? { input: null, output: null },
   };
 }
 
@@ -156,25 +220,41 @@ export async function runSoloBaseline(
   let solo: SideMetrics;
 
   if (cached && !opts?.force) {
-    solo = (cached.result as unknown as { metric: SideMetrics }).metric;
+    solo = normalizeSolo((cached.result as unknown as { metric: SideMetrics }).metric);
   } else {
-    const self = a.profile.compiled as unknown as HackathonProfile;
+    // 與蜂群同一套分享權限：雙方都只用投影後的檔案
+    const self = publicProfile(
+      sanitizeProfile(a.profile.compiled) as HackathonProfile,
+      (a.profile.visibility as VisibilityMap) ?? null,
+    );
     const other = publicProfile(
-      b.profile.compiled as unknown as HackathonProfile,
-      b.profile.visibility as never,
+      sanitizeProfile(b.profile.compiled) as HackathonProfile,
+      (b.profile.visibility as VisibilityMap) ?? null,
     );
     const qa = qaTextFromEvents(run.events);
-    const hasLlm = Boolean(process.env.LLM_API_KEY);
+    // 跟著引擎模式走：LLM_PROVIDER=mock（或沒有 LLM key）就不外送
+    const useLlm = LLM_MODE !== "mock";
     const t0 = Date.now();
-    const report = hasLlm
-      ? await real.realMatchReport(self, other, qa, `${runId}:solo`, runId)
-      : await mock.mockMatchReport(self, other, qa, `${runId}:solo`);
+    let report: MatchReport;
+    let meter: CallMeter;
+    try {
+      ({ value: report, meter } = await withMeter(() =>
+        useLlm
+          ? real.realMatchReport(self, other, qa, `${runId}:solo`, runId)
+          : mock.mockMatchReport(self, other, qa, `${runId}:solo`),
+      ));
+    } catch (e) {
+      console.error("[compare] solo baseline failed", e);
+      return null;
+    }
     const latencyMs = Date.now() - t0;
+    const attempts = useLlm ? Math.max(1, meter.calls) : 1;
+    const source = useLlm ? (LLM_MODE === "hybrid" ? "llm-single" : "llm") : "mock-single";
     solo = {
-      source: hasLlm ? (process.env.LLM_PROVIDER === "hybrid" ? "llm-single" : "llm") : "mock-single",
+      source,
       latencyMs,
-      calls: 1,
-      retries: 0,
+      calls: attempts,
+      retries: attempts - 1,
       score: report.score,
       verdict: report.verdict,
       dimensions: report.dimensions,
@@ -183,7 +263,15 @@ export async function runSoloBaseline(
       sharedTopics: report.sharedTopics?.length ?? 0,
       fieldsFilled: fieldsFilled(report),
       fieldsExpected: FIELDS_EXPECTED,
-      extra: { model: report.decisionModel ?? process.env.LLM_MODEL ?? null },
+      timing: { totalMs: latencyMs, scoringMs: latencyMs, transcriptMs: 0 },
+      callBreakdown: { transcript: 0, scoring: attempts, scoringComparable: attempts },
+      reusesSwarmTranscript: true,
+      scoringSource: useLlm ? "llm" : (report.decisionSource ?? "mock"),
+      tokens: {
+        input: meter.hasUsage ? meter.inputTokens : null,
+        output: meter.hasUsage ? meter.outputTokens : null,
+      },
+      extra: { model: useLlm ? (process.env.LLM_MODEL ?? null) : null },
     };
     await prisma.soloBaseline.upsert({
       where: { runId },
@@ -206,7 +294,7 @@ export async function runSoloBaseline(
 
   return {
     runId,
-    createdAt: (cached?.createdAt ?? new Date()).toISOString(),
+    createdAt: (cached && !opts?.force ? cached.createdAt : new Date()).toISOString(),
     swarm,
     solo,
     agreement,
@@ -222,7 +310,7 @@ export async function cachedComparison(runId: string): Promise<CompareResult | n
   if (!swarm) return null;
   const cached = await prisma.soloBaseline.findUnique({ where: { runId } });
   if (!cached) return null;
-  const solo = (cached.result as unknown as { metric: SideMetrics }).metric;
+  const solo = normalizeSolo((cached.result as unknown as { metric: SideMetrics }).metric);
   const dimKeys = ["interests", "values", "lifestyle", "communication", "intent"] as const;
   const diffs = dimKeys.map((k) =>
     Math.abs((swarm.dimensions[k] ?? 0) - (solo.dimensions[k] ?? 0)),

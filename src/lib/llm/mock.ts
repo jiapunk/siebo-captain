@@ -2,11 +2,19 @@ import type {
   HackathonProfile,
   IcebreakerCard,
   MatchReport,
+  ReportRetention,
 } from "../types";
 import type { Locale } from "../i18n-dict";
-import type { PublicProfile } from "../profile";
+import { isRedacted, sanitizeProfile, type PublicProfile } from "../profile";
 import { CONTENT, canonical } from "../content";
-import { decide, num, scoreOf, type DecideAnswer, type DecideQuestion } from "./decide";
+import {
+  decide,
+  num,
+  scoreOf,
+  type DecideAnswer,
+  type DecideQuestion,
+  type DecideResult,
+} from "./decide";
 
 // ================= 工具 =================
 function hashStr(s: string): number {
@@ -41,9 +49,6 @@ export function roleKey(role: string): string {
   })?.[1];
   return hit ?? role;
 }
-
-const roleLabel = (locale: Locale, role: string) =>
-  CONTENT[locale].roleLabels[roleKey(role)] ?? role;
 
 const ROLE_GROUP: Record<string, string> = {
   frontend: "engineering",
@@ -180,7 +185,7 @@ export async function mockMatchAnswers(
     fill(p.ma[0], {
       name: self.nickname,
       role: p.roleLabels[roleKey(self.role)] ?? self.role,
-      skills: self.skills.slice(0, 3).join(p.listSep),
+      skills: self.skills.slice(0, 3).join(p.listSep) || "—",
       verified,
     }),
     fill(p.ma[1], {
@@ -225,11 +230,17 @@ function reportQuestions(): DecideQuestion[] {
   ];
 }
 
+/**
+ * 送進決策層（Jev/LLM）的 state：只放正規化後的結構化值。
+ * 呼叫端（matching.runPair、compare）傳入的雙方檔案都已是 publicProfile 投影。
+ */
 function reportState(
-  self: HackathonProfile,
-  other: PublicProfile,
+  selfIn: HackathonProfile,
+  otherIn: PublicProfile,
   qa?: string,
 ): Record<string, unknown> {
+  const self = sanitizeProfile(selfIn);
+  const other = sanitizeProfile(otherIn);
   return {
     me: {
       nickname: self.nickname,
@@ -258,11 +269,16 @@ function localReportAnswers(
   locale: Locale,
 ): DecideAnswer[] {
   const jitter = hashStr(pairKey) % 7;
-  const comp = roleGroup(self.role) !== roleGroup(other.role);
+  // 被分享權限遮蔽（未公開）的欄位視為未知：不當成「相同」也不當成「重疊」
+  const comp =
+    isRedacted(self.role) ||
+    isRedacted(other.role) ||
+    roleGroup(self.role) !== roleGroup(other.role);
   const sharedSkills = overlap(self.skills, other.skills);
   const fullAvail =
     isFullTime(locale, self.availability) && isFullTime(locale, other.availability);
-  const goalMatch = self.goal === other.goal;
+  const goalMatch =
+    !isRedacted(self.goal) && !isRedacted(other.goal) && self.goal === other.goal;
   const styleMatch = isArchitect(self.workingStyle) === isArchitect(other.workingStyle);
 
   const dim = (v: number): DecideAnswer => ({
@@ -286,8 +302,66 @@ function localReportAnswers(
   ];
 }
 
-/** 決策分數（0-9）→ 0-100 */
-const to100 = (v: number) => Math.max(25, Math.min(97, Math.round((v / 9) * 100)));
+/** 決策分數（0-9）→ 0-100（未夾限的線性換算） */
+const scale100 = (v: number) => Math.round((v / 9) * 100);
+/** 決策分數（0-9）→ 0-100，夾在 25–97（夾限會讓決策值失真 → RETAIN 算不保留） */
+const to100 = (v: number) => Math.max(25, Math.min(97, scale100(v)));
+
+const DIM_SLOTS = [
+  ["interests", "d_skill", 5],
+  ["values", "d_goal", 5],
+  ["lifestyle", "d_avail", 5],
+  ["communication", "d_comms", 5],
+  ["intent", "d_reliability", 6],
+] as const;
+
+const ROLE_OVERLAP_RULE = (self: HackathonProfile, other: PublicProfile) =>
+  !isRedacted(self.role) &&
+  !isRedacted(other.role) &&
+  roleGroup(self.role) === roleGroup(other.role);
+
+/**
+ * RETAIN 量測（純函式）：決策層給的 slot 值是否「原封不動」進入最終報告。
+ *   - 維度：0-9 → 0-100 的換算若被 25–97 夾限改寫 → clamped
+ *   - 旗標：規則以 OR 覆寫決策層的判斷（例如 n_role_overlap）→ overridden
+ *   - 決策層是遠端（jev/llm）但該題逐題退回規則 → overridden
+ * 全部 slot 都原樣保留才算 retained。
+ */
+export function measureReportRetention(
+  self: HackathonProfile,
+  other: PublicProfile,
+  answers: DecideAnswer[],
+  decision: { source: DecideResult["source"]; fallbackIds: string[] },
+): ReportRetention {
+  const clamped: string[] = [];
+  const overridden = new Set<string>();
+  const has = (id: string) => answers.some((a) => a.id === id);
+  for (const [, id, dft] of DIM_SLOTS) {
+    if (!has(id)) {
+      overridden.add(id); // 缺答 → 用預設值
+      continue;
+    }
+    const v = scoreOf(answers, id, dft);
+    if (to100(v) !== scale100(v)) clamped.push(id);
+  }
+  for (const id of ["n_goal_diff", "n_avail_diff", "n_role_overlap"]) {
+    if (!has(id)) overridden.add(id);
+  }
+  const decidedOverlap = num(answers, "n_role_overlap", 0) >= 0.6;
+  if (!decidedOverlap && ROLE_OVERLAP_RULE(self, other)) overridden.add("n_role_overlap");
+  if (decision.source !== "mock")
+    for (const id of decision.fallbackIds) overridden.add(id);
+
+  const slots = DIM_SLOTS.length + 3;
+  const lost = new Set([...clamped, ...overridden]);
+  return {
+    retained: lost.size === 0,
+    slots,
+    kept: slots - lost.size,
+    clamped,
+    overridden: [...overridden],
+  };
+}
 
 function composeReport(
   self: HackathonProfile,
@@ -312,8 +386,7 @@ function composeReport(
   const goalDiff = num(answers, "n_goal_diff", 0) >= 0.6;
   const availDiff = num(answers, "n_avail_diff", 0) >= 0.6;
   const roleOverlap =
-    num(answers, "n_role_overlap", 0) >= 0.6 ||
-    roleGroup(self.role) === roleGroup(other.role);
+    num(answers, "n_role_overlap", 0) >= 0.6 || ROLE_OVERLAP_RULE(self, other);
 
   const sharedSkills = overlap(self.skills, other.skills);
   const reasons: string[] = [];
@@ -338,7 +411,8 @@ function composeReport(
       fill(p.reasons.commonTech, { list: sharedSkills.slice(0, 2).join(p.listSep) }),
     );
   if (dims.lifestyle >= 70) reasons.push(p.reasons.fullTime);
-  if (!goalDiff) reasons.push(fill(p.reasons.goalSame, { goal: self.goal }));
+  if (!goalDiff && !isRedacted(self.goal) && self.goal)
+    reasons.push(fill(p.reasons.goalSame, { goal: self.goal }));
   if (dims.communication >= 70) reasons.push(p.reasons.styleSame);
   if (reasons.length === 0) reasons.push(p.reasons.fallback);
 
@@ -368,6 +442,28 @@ function composeReport(
   return { score, verdict, dimensions: dims, reasons, redFlags, sharedTopics, summaryForUser };
 }
 
+/** 決策結果 → 報告（附 RETAIN 量測、逐題退回數、覆蓋明細） */
+function reportFromDecision(
+  self: HackathonProfile,
+  other: PublicProfile,
+  result: DecideResult,
+  locale: Locale,
+): MatchReport {
+  return {
+    ...composeReport(self, other, result.answers, locale),
+    decisionSource: result.source,
+    decisionModel: result.model,
+    fallbackCount: result.coverage.fallbacks,
+    decisionCoverage: {
+      expected: result.coverage.expected,
+      remote: result.coverage.remote,
+      fallbacks: result.coverage.fallbacks,
+      retries: result.coverage.retries,
+    },
+    retention: measureReportRetention(self, other, result.answers, result),
+  };
+}
+
 /** 規則引擎報告（offline；測試與無 key 環境） */
 export async function mockMatchReport(
   self: HackathonProfile,
@@ -377,20 +473,14 @@ export async function mockMatchReport(
   _sessionId?: string,
   locale: Locale = "zh",
 ): Promise<MatchReport> {
-  const questions = reportQuestions();
+  const local = localReportAnswers(self, other, pairKey, locale);
   const result = await decide({
     state: reportState(self, other, _qa),
-    questions,
+    questions: reportQuestions(),
     provider: "mock",
-    fallback: (q) =>
-      localReportAnswers(self, other, pairKey, locale).find((a) => a.id === q.id) ??
-      localReportAnswers(self, other, pairKey, locale)[0],
+    fallback: (q) => local.find((a) => a.id === q.id) ?? local[0],
   });
-  return {
-    ...composeReport(self, other, result.answers, locale),
-    decisionSource: result.source,
-    decisionModel: result.model,
-  };
+  return reportFromDecision(self, other, result, locale);
 }
 
 /** Jev 決策報告（env provider；失敗自動退回規則引擎） */
@@ -402,29 +492,19 @@ export async function decisionMatchReport(
   sessionId?: string,
   locale: Locale = "zh",
 ): Promise<MatchReport> {
-  const questions = reportQuestions();
+  const local = localReportAnswers(self, other, pairKey, locale);
   const result = await decide({
     state: reportState(self, other, qa),
-    questions,
+    questions: reportQuestions(),
     sessionId,
-    fallback: (q) =>
-      localReportAnswers(self, other, pairKey, locale).find((a) => a.id === q.id) ??
-      localReportAnswers(self, other, pairKey, locale)[0],
+    fallback: (q) => local.find((a) => a.id === q.id) ?? local[0],
   });
   if (result.source === "mock" && result.note)
     console.warn(`[report] decision fallback → ${result.note}`);
-  const report = composeReport(self, other, result.answers, locale);
   // 規則層對照分（純函式、零成本）：讓 UI 直接顯示「有 Jev 的差別」
-  const ruleReport = composeReport(
-    self,
-    other,
-    localReportAnswers(self, other, pairKey, locale),
-    locale,
-  );
+  const ruleReport = composeReport(self, other, local, locale);
   return {
-    ...report,
-    decisionSource: result.source,
-    decisionModel: result.model,
+    ...reportFromDecision(self, other, result, locale),
     ruleScore: ruleReport.score,
   };
 }
@@ -521,6 +601,7 @@ export async function mockTeamReply(
   bot: HackathonProfile,
   teamHistory: { senderId: string; content: string }[],
   botId: string,
+  _sessionId?: string,
   locale: Locale = "zh",
 ): Promise<string> {
   const p = c(locale);
@@ -539,6 +620,7 @@ export async function mockDmReply(
   bot: HackathonProfile,
   history: { senderId: string; content: string }[],
   botId: string,
+  _sessionId?: string,
   locale: Locale = "zh",
 ): Promise<string> {
   const p = c(locale);

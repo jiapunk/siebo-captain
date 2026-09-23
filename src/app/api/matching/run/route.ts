@@ -1,33 +1,52 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
 import { emailGate } from "@/lib/gate";
 import { startMatching } from "@/lib/matching";
 import { getServerLocale } from "@/lib/locale";
+import { ensureReaped, throttle, tryLock } from "@/lib/costGuard";
+import { apiError, readJson, route } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+/**
+ * 隊長出發：對最多 5 位候選各開一場互盤（背景執行）。
+ * - 409 already_running：你上一輪還有 running 的 run（回應附 runIds），或同一瞬間的重複請求
+ * - 429 rate_limited：每人 10 次 / 10 分鐘（附 retryAfterSec）
+ */
+export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
-  if (!uid) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!uid) return apiError(401, "unauthorized");
 
   const gate = await emailGate(uid);
-  if (gate) return NextResponse.json({ error: gate }, { status: 403 });
-  let faultInject = false;
+  if (gate) return apiError(403, gate);
+  // 空 body 允許；有 body 就必須是合法 JSON
+  const body = await readJson<{ faultInject?: boolean }>(req, { allowEmpty: true });
+  const faultInject = body.faultInject === true;
+
+  // 同一使用者的並發請求：只放行第一個（建立 run 列之前的空窗）
+  const release = tryLock(`matching:${uid}`, 60_000);
+  if (!release) return apiError(409, "already_running", { runIds: [] });
   try {
-    const body = (await req.json()) as { faultInject?: boolean };
-    faultInject = Boolean(body?.faultInject);
-  } catch {
-    // 空 body 允許
-  }
-  try {
+    await ensureReaped();
+    const running = await prisma.matchRun.findMany({
+      where: { userAId: uid, status: "running" },
+      select: { id: true },
+    });
+    if (running.length > 0)
+      return apiError(409, "already_running", { runIds: running.map((r) => r.id) });
+
+    throttle("matching", uid);
+
     const locale = await getServerLocale();
     const runIds = await startMatching(uid, locale, { faultInject });
-    if (runIds.length === 0)
-      return NextResponse.json({ error: "no_candidates" }, { status: 409 });
+    if (runIds.length === 0) return apiError(409, "no_candidates");
     return NextResponse.json({ runIds });
   } catch (e) {
     if ((e as Error).message === "PROFILE_NOT_READY")
-      return NextResponse.json({ error: "profile_not_ready" }, { status: 400 });
+      return apiError(400, "profile_not_ready");
     throw e;
+  } finally {
+    release();
   }
-}
+}, "matching/run");

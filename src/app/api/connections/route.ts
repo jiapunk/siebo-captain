@@ -4,18 +4,19 @@ import { getCurrentUserId } from "@/lib/session";
 import { emailGate } from "@/lib/gate";
 import { publish } from "@/lib/bus";
 import { recordLedger } from "@/lib/ledger";
+import { throttle, tryLock } from "@/lib/costGuard";
+import { apiError, isId, readJson, route } from "@/lib/http";
+import { acceptConnection, directionOf } from "./connectionState";
 
 export const dynamic = "force-dynamic";
 
-const pair = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
-
-/** 我的持續聯絡清單 */
-export async function GET() {
+/** 我的持續聯絡清單（含等待中的邀請） */
+export const GET = route(async () => {
   const uid = await getCurrentUserId();
-  if (!uid) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!uid) return apiError(401, "unauthorized");
 
   const gate = await emailGate(uid);
-  if (gate) return NextResponse.json({ error: gate }, { status: 403 });
+  if (gate) return apiError(403, gate);
 
   const conns = await prisma.connection.findMany({
     where: { OR: [{ userAId: uid }, { userBId: uid }] },
@@ -30,55 +31,108 @@ export async function GET() {
   });
   const map = new Map(users.map((u) => [u.id, u]));
 
+  const connections = conns.map((c) => {
+    const oid = c.userAId === uid ? c.userBId : c.userAId;
+    const u = map.get(oid);
+    return {
+      id: c.id,
+      status: c.status,
+      direction: directionOf(c, uid),
+      other: {
+        id: oid,
+        name: u?.name ?? "?",
+        emoji: u?.emoji ?? "?",
+        isBot: u?.isBot ?? false,
+      },
+      lastMessage: c.messages[0]
+        ? { content: c.messages[0].content, senderId: c.messages[0].senderId }
+        : null,
+      createdAt: c.createdAt,
+    };
+  });
+
   return NextResponse.json({
-    connections: conns.map((c) => {
-      const oid = c.userAId === uid ? c.userBId : c.userAId;
-      const u = map.get(oid);
-      return {
-        id: c.id,
-        status: c.status,
-        other: {
-          id: oid,
-          name: u?.name ?? "?",
-          emoji: u?.emoji ?? "?",
-          isBot: u?.isBot ?? false,
-        },
-        lastMessage: c.messages[0]
-          ? { content: c.messages[0].content, senderId: c.messages[0].senderId }
-          : null,
-        createdAt: c.createdAt,
-      };
-    }),
+    connections,
+    incoming: connections.filter((c) => c.direction === "incoming"),
+    outgoing: connections.filter((c) => c.direction === "outgoing"),
   });
-}
+}, "connections GET");
 
-/** 發起保持聯絡（模擬對象自動接受） */
-export async function POST(req: Request) {
+/**
+ * 發起保持聯絡：body { userId }
+ * 回應 { id, status, direction, created }；重複發起不會產生重複資料，也不會重複記帳。
+ */
+export const POST = route(async (req: Request) => {
   const uid = await getCurrentUserId();
-  if (!uid) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!uid) return apiError(401, "unauthorized");
 
-  const { userId } = (await req.json()) as { userId?: string };
-  if (!userId || userId === uid)
-    return NextResponse.json({ error: "invalid_user" }, { status: 400 });
+  const gate = await emailGate(uid);
+  if (gate) return apiError(403, gate);
 
-  const other = await prisma.user.findUnique({ where: { id: userId } });
-  if (!other) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const { userId } = await readJson<{ userId?: string }>(req);
+  if (!isId(userId) || userId === uid) return apiError(400, "invalid_user");
 
-  const [a, b] = pair(uid, userId);
-  const status = other.isBot ? "connected" : "requested";
-
-  const conn = await prisma.connection.upsert({
-    where: { userAId_userBId: { userAId: a, userBId: b } },
-    update: {},
-    create: { userAId: a, userBId: b, status },
+  const other = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, isBot: true },
   });
+  if (!other) return apiError(404, "not_found");
 
-  if (conn.status === "connected") {
-    await recordLedger(uid, "connection", 1, conn.id);
-    await recordLedger(userId, "connection", 1, conn.id);
+  const pairKey = uid < userId ? `${uid}|${userId}` : `${userId}|${uid}`;
+  const release = tryLock(`connect:${pairKey}`, 30_000);
+  if (!release) return apiError(409, "in_progress");
+  try {
+    const existing = await prisma.connection.findFirst({
+      where: {
+        OR: [
+          { userAId: uid, userBId: userId },
+          { userAId: userId, userBId: uid },
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (existing) {
+      // 對方先邀請了我：我也按「保持聯絡」＝接受；對 bot 的舊 requested 列也直接升級
+      if (
+        existing.status === "requested" &&
+        (existing.userBId === uid || other.isBot)
+      ) {
+        await acceptConnection(existing.id, existing.userAId, existing.userBId);
+        return NextResponse.json({
+          id: existing.id,
+          status: "connected",
+          direction: null,
+          created: false,
+        });
+      }
+      return NextResponse.json({
+        id: existing.id,
+        status: existing.status,
+        direction: directionOf(existing, uid),
+        created: false,
+      });
+    }
+
+    throttle("connect", uid);
+    const status = other.isBot ? "connected" : "requested";
+    const conn = await prisma.connection.create({
+      data: { userAId: uid, userBId: userId, status },
+    });
+    if (status === "connected") {
+      await recordLedger(uid, "connection", 1, conn.id);
+      await recordLedger(userId, "connection", 1, conn.id);
+    }
+
+    publish(`user:${uid}`, { type: "refresh" });
+    publish(`user:${userId}`, { type: "refresh" });
+    return NextResponse.json({
+      id: conn.id,
+      status: conn.status,
+      direction: directionOf(conn, uid),
+      created: true,
+    });
+  } finally {
+    release();
   }
-
-  publish(`user:${uid}`, { type: "refresh" });
-  publish(`user:${userId}`, { type: "refresh" });
-  return NextResponse.json({ id: conn.id, status: conn.status });
-}
+}, "connections POST");

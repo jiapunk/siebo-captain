@@ -4,6 +4,7 @@ import {
   PRIORITY_MIN,
   RADAR_MIN,
   bothPass,
+  latestRunPerPeer,
   pairScores,
   radarBand,
   type PairRun,
@@ -47,4 +48,27 @@ test("bothPass：雙方都 ≥ 60", () => {
   assert.equal(bothPass(run(60, 60)), true);
   assert.equal(bothPass(run(95, 59)), false);
   assert.equal(bothPass(run(95, null)), false);
+});
+
+test("latestRunPerPeer：每位對象取最新一筆（不看分數）", () => {
+  const mk = (id: string, a: string, b: string, t: number, sa: number, sb: number) => ({
+    id,
+    userAId: a,
+    userBId: b,
+    createdAt: new Date(t),
+    reportA: { score: sa },
+    reportB: { score: sb },
+  });
+  const runs = [
+    mk("old-pass", "me", "leo", 1000, 83, 80),
+    mk("new-fail", "me", "leo", 2000, 45, 80), // 新評估判不合格 → 舊的不得復活
+    mk("from-kiwi", "kiwi", "me", 1500, 70, 72),
+    mk("unrelated", "x", "y", 3000, 90, 90),
+  ];
+  const m = latestRunPerPeer(runs, "me");
+  assert.deepEqual([...m.keys()].sort(), ["kiwi", "leo"]);
+  assert.equal(m.get("leo")!.id, "new-fail");
+  assert.equal(radarBand(m.get("leo")!, "me"), null);
+  assert.equal(m.get("kiwi")!.id, "from-kiwi");
+  assert.equal(radarBand(m.get("kiwi")!, "me"), "priority");
 });

@@ -83,3 +83,24 @@ export function bothPass(run: PairRun): boolean {
   const b = reportScore(run.reportB);
   return a !== null && b !== null && a >= PRIORITY_MIN && b >= PRIORITY_MIN;
 }
+
+/**
+ * 每位對象只取「最新一筆」run（不論分數），再交給 radarBand / bothPass 判斷。
+ * 避免新評估判不合格時，舊的合格評估「復活」。
+ * runs 可為任意順序；回傳 Map<對方 id, 最新 run>。uid 不在其中的 run 會被略過。
+ */
+export function latestRunPerPeer<T extends PairRun & { createdAt: Date | string | number }>(
+  runs: T[],
+  uid: string,
+): Map<string, T> {
+  const ts = (r: T) => new Date(r.createdAt).getTime();
+  const out = new Map<string, T>();
+  for (const r of runs) {
+    if (r.userAId !== uid && r.userBId !== uid) continue;
+    const other = r.userAId === uid ? r.userBId : r.userAId;
+    if (other === uid) continue;
+    const prev = out.get(other);
+    if (!prev || ts(r) > ts(prev)) out.set(other, r);
+  }
+  return out;
+}

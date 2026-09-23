@@ -6,6 +6,9 @@ import type { Locale } from "./i18n-dict";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** 送給 LLM 的私訊歷史只取最近幾則（只含 senderId + content，不帶任何其他欄位） */
+export const DM_HISTORY_LIMIT = 20;
+
 /** 一對一私訊：模擬對象延遲回覆 */
 export function scheduleConnectReply(
   connectionId: string,
@@ -19,7 +22,13 @@ export function scheduleConnectReply(
 
       const conn = await prisma.connection.findUnique({
         where: { id: connectionId },
-        include: { messages: { orderBy: { createdAt: "asc" } } },
+        include: {
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: DM_HISTORY_LIMIT,
+            select: { senderId: true, content: true },
+          },
+        },
       });
       if (!conn || conn.status !== "connected") return;
 
@@ -33,10 +42,10 @@ export function scheduleConnectReply(
       const profile = other.profile?.compiled as unknown as HackathonProfile | null;
       if (!profile?.role) return;
 
-      const history = conn.messages.map((m) => ({
-        senderId: m.senderId,
-        content: m.content,
-      }));
+      const history = conn.messages
+        .slice()
+        .reverse()
+        .map((m) => ({ senderId: m.senderId, content: m.content }));
 
       publish(`connect:${connectionId}`, { type: "typing", userId: otherId });
       const reply = await llm.dmReply(

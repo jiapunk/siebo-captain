@@ -1,4 +1,6 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
+import { emptyMeter, mergeMeter, withMeterSettled } from "./llm/meter";
 
 /**
  * 蜂群 Part 層（P0）：把每個工作單元變成有穩定 ID、固定 slot、可覆蓋檢查與重試的 Part。
@@ -23,7 +25,12 @@ export interface PartLifecycleEvent {
   attempt?: number;
   provider?: string | null;
   latencyMs?: number;
+  /** 總重試次數 = Part 級重試 + real.ts／decide 內部重試（實際發出的請求才算） */
   retries?: number;
+  /** 實際發出的 HTTP 請求數（mock＝0） */
+  calls?: number;
+  /** true＝遠端全部失敗後改用本機腳本產生（provider 會是 mock） */
+  fallback?: boolean;
   error?: string;
 }
 
@@ -31,118 +38,220 @@ export interface PartTrace {
   provider?: string;
   model?: string;
   inputTokens?: number;
+  outputTokens?: number;
   answers?: unknown;
   confidence?: number;
   retained?: boolean;
+  /** 這次結果本身就是本機退路產生的（例如本場已降級，直接用本機腳本） */
+  fallback?: boolean;
+  /** 附加在 SwarmPart.note 的說明 */
+  note?: string;
 }
 
-/** 執行一個 Part：pending → (失敗自動重試一次) → done/failed，全程寫入軌跡 */
+/** runPartDetailed 的執行摘要（寫進 SwarmPart，也回給呼叫端） */
+export interface PartMeta {
+  /** Part 級嘗試次數（1 或 2；fallback 不算） */
+  attempts: number;
+  /** 所有嘗試加總的實際 HTTP 請求數（mock＝0） */
+  calls: number;
+  /** 寫進 SwarmPart.retries 的總重試次數 */
+  retries: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** 成功那一次（或 fallback）的耗時 */
+  latencyMs: number;
+  /** 含失敗嘗試的總耗時 */
+  totalMs: number;
+  fallback: boolean;
+  provider: string | null;
+}
+
+export interface RunPartOptions<T> {
+  id: string;
+  kind: string;
+  label?: string;
+  runId?: string;
+  teamId?: string;
+  notify?: (ev: PartLifecycleEvent) => void;
+  /** demo 用：第一次嘗試強制失敗，展示「成員失效 → 重試接力」 */
+  faultOnce?: boolean;
+  /** 回傳值驗證：throw 代表這次嘗試失敗（會重試），避免「先標 done 才崩潰」 */
+  validate?: (value: T) => void;
+  /** 所有嘗試都失敗後的本機退路（不外送、不可失敗）；有給就不會 throw */
+  fallback?: () => Promise<{ value: T; trace?: PartTrace }>;
+}
+
+const errMsg = (e: unknown) => ((e as Error)?.message ?? String(e)).slice(0, 300);
+
+/** 執行一個 Part：pending → (失敗自動重試一次) → done / fallback / failed，全程寫入軌跡 */
 export async function runPart<T>(
-  opts: {
-    id: string;
-    kind: string;
-    label?: string;
-    runId?: string;
-    teamId?: string;
-    notify?: (ev: PartLifecycleEvent) => void;
-    /** demo 用：第一次嘗試強制失敗，展示「成員失效 → 重試接力」 */
-    faultOnce?: boolean;
-  },
+  opts: RunPartOptions<T>,
   fn: () => Promise<{ value: T; trace?: PartTrace }>,
 ): Promise<T> {
+  return (await runPartDetailed(opts, fn)).value;
+}
+
+export async function runPartDetailed<T>(
+  opts: RunPartOptions<T>,
+  fn: () => Promise<{ value: T; trace?: PartTrace }>,
+): Promise<{ value: T; meta: PartMeta; trace?: PartTrace }> {
+  const label = opts.label ?? "";
+  // 同一個穩定 ID 重跑時把上一輪的軌跡清乾淨（避免殘留 provider/retries/answers）
   await prisma.swarmPart.upsert({
     where: { id: opts.id },
-    update: { status: "pending", note: null },
+    update: {
+      kind: opts.kind,
+      label,
+      runId: opts.runId ?? null,
+      teamId: opts.teamId ?? null,
+      status: "pending",
+      provider: null,
+      model: null,
+      latencyMs: null,
+      inputTokens: null,
+      retries: 0,
+      confidence: null,
+      retained: null,
+      answers: Prisma.DbNull,
+      note: null,
+    },
     create: {
       id: opts.id,
       kind: opts.kind,
-      label: opts.label ?? "",
+      label,
       runId: opts.runId ?? null,
       teamId: opts.teamId ?? null,
       status: "pending",
     },
   });
-  opts.notify?.({
-    partId: opts.id,
-    kind: opts.kind,
-    label: opts.label ?? "",
-    phase: "pending",
-  });
+  const base = { partId: opts.id, kind: opts.kind, label };
+  opts.notify?.({ ...base, phase: "pending" });
 
   const maxAttempts = 2; // part 級重試：1 次原始 + 1 次重試
+  const total = emptyMeter();
+  const tStart = Date.now();
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const t0 = Date.now();
-    opts.notify?.({
-      partId: opts.id,
-      kind: opts.kind,
-      label: opts.label ?? "",
-      phase: "running",
-      attempt,
-    });
+
+  const finish = async (
+    value: T,
+    trace: PartTrace | undefined,
+    attempts: number,
+    t0: number,
+    fallbackRun: boolean,
+  ) => {
+    const fallback = fallbackRun || Boolean(trace?.fallback);
+    const latencyMs = Date.now() - t0;
+    const retries = attempts - 1 + total.retries;
+    const inputTokens = total.hasUsage ? total.inputTokens : (trace?.inputTokens ?? null);
+    const outputTokens = total.hasUsage ? total.outputTokens : (trace?.outputTokens ?? null);
+    const provider = trace?.provider ?? null;
+    const note = [
+      fallbackRun
+        ? `fallback=local after: ${errMsg(lastErr)}`
+        : trace?.fallback
+          ? `fallback=local: ${trace.note ?? "local script"}`
+          : (trace?.note ?? null),
+      `attempts=${attempts} calls=${total.calls}`,
+      outputTokens !== null ? `outputTokens=${outputTokens}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    // DB 寫入失敗不重跑付費的 fn：記 log 即可，值照樣回傳
     try {
-      if (opts.faultOnce && attempt === 1)
-        throw new Error("fault_injection_demo: simulated part failure");
-      const { value, trace } = await fn();
       await prisma.swarmPart.update({
         where: { id: opts.id },
         data: {
           status: "done",
-          provider: trace?.provider ?? null,
+          provider,
           model: trace?.model ?? null,
-          latencyMs: Date.now() - t0,
-          inputTokens: trace?.inputTokens ?? null,
+          latencyMs,
+          inputTokens,
           confidence: trace?.confidence ?? null,
           retained: trace?.retained ?? null,
           answers: (trace?.answers as object) ?? undefined,
-          retries: attempt - 1,
+          retries,
+          note,
         },
       });
-      opts.notify?.({
-        partId: opts.id,
-        kind: opts.kind,
-        label: opts.label ?? "",
-        phase: "done",
-        attempt,
-        provider: trace?.provider ?? null,
-        latencyMs: Date.now() - t0,
-        retries: attempt - 1,
-      });
-      return value;
     } catch (e) {
-      lastErr = e;
-      if (attempt < maxAttempts) {
-        opts.notify?.({
-          partId: opts.id,
-          kind: opts.kind,
-          label: opts.label ?? "",
-          phase: "retry",
-          attempt,
-          error: (e as Error).message,
-        });
-        await prisma.swarmPart.update({
+      console.error(`[swarm] part ${opts.id} trace write failed`, e);
+    }
+    opts.notify?.({
+      ...base,
+      phase: "done",
+      attempt: attempts,
+      provider,
+      latencyMs,
+      retries,
+      calls: total.calls,
+      fallback,
+    });
+    const meta: PartMeta = {
+      attempts,
+      calls: total.calls,
+      retries,
+      inputTokens,
+      outputTokens,
+      latencyMs,
+      totalMs: Date.now() - tStart,
+      fallback,
+      provider,
+    };
+    return { value, meta, trace };
+  };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const t0 = Date.now();
+    opts.notify?.({ ...base, phase: "running", attempt });
+    const r = await withMeterSettled(async () => {
+      if (opts.faultOnce && attempt === 1)
+        throw new Error("fault_injection_demo: simulated part failure");
+      const out = await fn();
+      opts.validate?.(out.value);
+      return out;
+    });
+    mergeMeter(total, r.meter);
+    if (r.ok) return finish(r.value.value, r.value.trace, attempt, t0, false);
+
+    lastErr = r.error;
+    if (attempt < maxAttempts) {
+      opts.notify?.({ ...base, phase: "retry", attempt, error: errMsg(r.error) });
+      await prisma.swarmPart
+        .update({
           where: { id: opts.id },
-          data: { retries: attempt, note: `retry after: ${(e as Error).message}` },
-        });
-        continue;
-      }
+          data: { retries: attempt, note: `retry after: ${errMsg(r.error)}` },
+        })
+        .catch(() => {});
     }
   }
 
-  await prisma.swarmPart.update({
-    where: { id: opts.id },
-    data: {
-      status: "failed",
-      retries: maxAttempts - 1,
-      note: `failed: ${(lastErr as Error)?.message ?? "unknown"}`,
-    },
-  });
+  if (opts.fallback) {
+    const t0 = Date.now();
+    try {
+      const out = await opts.fallback();
+      opts.validate?.(out.value);
+      return finish(out.value, out.trace, maxAttempts, t0, true);
+    } catch (e) {
+      console.error(`[swarm] part ${opts.id} local fallback failed`, e);
+    }
+  }
+
+  await prisma.swarmPart
+    .update({
+      where: { id: opts.id },
+      data: {
+        status: "failed",
+        retries: maxAttempts - 1 + total.retries,
+        note: `failed: ${errMsg(lastErr)} · attempts=${maxAttempts} calls=${total.calls}`,
+      },
+    })
+    .catch(() => {});
   opts.notify?.({
-    partId: opts.id,
-    kind: opts.kind,
-    label: opts.label ?? "",
+    ...base,
     phase: "failed",
-    error: (lastErr as Error)?.message ?? "unknown",
+    retries: maxAttempts - 1 + total.retries,
+    calls: total.calls,
+    error: errMsg(lastErr ?? "unknown"),
   });
   throw lastErr;
 }
@@ -153,7 +262,9 @@ export interface PartSummary {
   failed: number;
   pending: number;
   retries: number;
-  retainedPct: number | null; // 決策值原樣進入交付的比例（可量測者）
+  /** 遠端失敗後改用本機腳本完成的 part 數 */
+  fallbacks: number;
+  retainedPct: number | null; // 決策值原樣進入交付的比例（可量測者：報告 part 的 RETAIN 量測）
   providers: string[]; // 出現過的 provider（去重）
   avgLatencyMs: number | null;
 }
@@ -161,7 +272,14 @@ export interface PartSummary {
 /** 單一 run 的覆蓋統計（pair 工作預期 6 個 part） */
 export function summarizeParts(
   runId: string,
-  parts: { status: string; retries: number; retained: boolean | null; provider: string | null; latencyMs: number | null }[],
+  parts: {
+    status: string;
+    retries: number;
+    retained: boolean | null;
+    provider: string | null;
+    latencyMs: number | null;
+    note?: string | null;
+  }[],
 ): PartSummary {
   const expected = PAIR_PART_IDS(runId).length;
   const mine = parts;
@@ -169,6 +287,7 @@ export function summarizeParts(
   const failed = mine.filter((p) => p.status === "failed").length;
   const pending = Math.max(0, expected - mine.length);
   const retries = mine.reduce((a, p) => a + p.retries, 0);
+  const fallbacks = mine.filter((p) => (p.note ?? "").startsWith("fallback=")).length;
   const measurable = mine.filter((p) => p.retained !== null);
   const retainedPct = measurable.length
     ? Math.round((measurable.filter((p) => p.retained).length / measurable.length) * 100)
@@ -180,7 +299,7 @@ export function summarizeParts(
   const avgLatencyMs = lat.length
     ? Math.round(lat.reduce((a, p) => a + p.latencyMs, 0) / lat.length)
     : null;
-  return { expected, done, failed, pending, retries, retainedPct, providers, avgLatencyMs };
+  return { expected, done, failed, pending, retries, fallbacks, retainedPct, providers, avgLatencyMs };
 }
 
 /** 批次取得多個 run 的 part 明細 */
@@ -243,6 +362,7 @@ export async function partsByRun(runIds: string[]) {
       retained: true,
       provider: true,
       latencyMs: true,
+      note: true,
     },
   });
   const map = new Map<string, PartSummary>();

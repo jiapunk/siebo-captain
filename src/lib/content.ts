@@ -71,6 +71,13 @@ export interface ContentData {
     riskOverlap: string;
     riskPartTime: string;
     riskNone: string;
+    // ---- engine（組隊理由）新增 ----
+    rationaleGoalsMixed: string; // {goals}
+    rationaleEvidence: string; // {coverage} {complement} {chemistry} {logistics} {source}
+    rationaleCompetence: string; // {raw} {comp} {blended}
+    rationaleSocial: string; // {raw}
+    riskDeadlock: string;
+    hidden: string; // 分享權限遮蔽的欄位
   };
   card: {
     complementDiff: string; // {a} {name} {b}
@@ -230,6 +237,12 @@ const zh: ContentData = {
     riskOverlap: "角色有重疊，分工要先講死",
     riskPartTime: "有人只能兼職，任務分配要保守一點",
     riskNone: "暫無明顯風險",
+    rationaleGoalsMixed: "目標不一致（{goals}），先對齊這次要拿獎還是要學習",
+    rationaleEvidence: "覆蓋 {coverage} · 互補 {complement} · 化學 {chemistry} · 後勤 {logistics}（{source}）",
+    rationaleCompetence: "能力模式：互盤 {raw} × 0.75 ＋ 帳本 {comp} × 0.25 = {blended}",
+    rationaleSocial: "社交模式：僅採用互盤評估分 {raw}（對照組）",
+    riskDeadlock: "工作方式或地雷有衝突，先講好怎麼做決定",
+    hidden: "未公開",
   },
   card: {
     complementDiff: "你是{a}、{name}是{b} — 技能線互補，能互相 cover",
@@ -399,6 +412,12 @@ const en: ContentData = {
     riskOverlap: "Roles overlap — define the split early",
     riskPartTime: "Someone is part-time — assign conservatively",
     riskNone: "No obvious risks",
+    rationaleGoalsMixed: "Goals differ ({goals}) — agree on what this hackathon is for first",
+    rationaleEvidence: "Coverage {coverage} · Complement {complement} · Chemistry {chemistry} · Logistics {logistics} ({source})",
+    rationaleCompetence: "Competence mode: pair eval {raw} × 0.75 + ledger {comp} × 0.25 = {blended}",
+    rationaleSocial: "Social mode: pair eval score only, {raw} (control group)",
+    riskDeadlock: "Working styles or dealbreakers clash — agree on how decisions get made",
+    hidden: "Hidden",
   },
   card: {
     complementDiff: "You're {a}, {name} is {b} — complementary lines, mutual coverage",
@@ -568,6 +587,12 @@ const ja: ContentData = {
     riskOverlap: "役割が重複——分業を先に明文化",
     riskPartTime: "兼務の人がいます——余裕を持った割当を",
     riskNone: "明確なリスクなし",
+    rationaleGoalsMixed: "目標がばらばら（{goals}）——今回の狙いを先にすり合わせ",
+    rationaleEvidence: "カバー {coverage} · 補完 {complement} · 相性 {chemistry} · 稼働 {logistics}（{source}）",
+    rationaleCompetence: "能力モード：相互評価 {raw} × 0.75 ＋ 台帳 {comp} × 0.25 = {blended}",
+    rationaleSocial: "ソーシャルモード：相互評価スコア {raw} のみ（対照群）",
+    riskDeadlock: "進め方や地雷が衝突——意思決定の方法を先に決める",
+    hidden: "非公開",
   },
   card: {
     complementDiff: "あなたは{a}、{name}は{b} — スキルライン補完、相互カバー",
@@ -925,7 +950,13 @@ const cn: ContentData = {
     "rationaleSame": "目标一致：{goal}",
     "riskOverlap": "角色有重叠，分工要先讲死",
     "riskPartTime": "有人只能兼职，任务分配要保守一点",
-    "riskNone": "暂无明显风险"
+    "riskNone": "暂无明显风险",
+    "rationaleGoalsMixed": "目标不一致（{goals}），先对齐这次要拿奖还是要学习",
+    "rationaleEvidence": "覆盖 {coverage} · 互补 {complement} · 化学 {chemistry} · 后勤 {logistics}（{source}）",
+    "rationaleCompetence": "能力模式：互盘 {raw} × 0.75 ＋ 账本 {comp} × 0.25 = {blended}",
+    "rationaleSocial": "社交模式：仅采用互盘评估分 {raw}（对照组）",
+    "riskDeadlock": "工作方式或雷区有冲突，先讲好怎么做决定",
+    "hidden": "未公开"
   },
   "card": {
     "complementDiff": "你是{a}、{name}是{b} — 技能线互补，能互相 cover",

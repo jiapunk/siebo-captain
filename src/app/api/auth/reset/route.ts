@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { consumeAuthToken, hashPassword, validatePassword } from "@/lib/auth";
+import {
+  consumeAuthToken,
+  hashPassword,
+  readJsonBody,
+  str,
+  validatePassword,
+} from "@/lib/auth";
+import { clearLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 /** 以權杖重設密碼，並登出所有裝置 */
 export async function POST(req: Request) {
-  const { token, password } = (await req.json()) as {
-    token?: string;
-    password?: string;
-  };
-  if (!token || !password)
+  const body = await readJsonBody(req);
+  const token = str(body?.token);
+  const password = str(body?.password);
+  if (!token || !password || token.length > 256)
     return NextResponse.json({ error: "invalid_token" }, { status: 400 });
 
   const user = await prisma.user.findUnique({
@@ -33,6 +39,8 @@ export async function POST(req: Request) {
     // 重設後作廢所有登入工作階段
     prisma.session.deleteMany({ where: { userId: uid } }),
   ]);
+  // 重設成功後解除該 email 的登入鎖定，讓使用者能立刻用新密碼登入
+  clearLimit(`login:${user.email}`);
 
   return NextResponse.json({ ok: true });
 }

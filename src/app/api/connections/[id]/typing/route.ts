@@ -16,6 +16,9 @@ export async function POST(
   const conn = await prisma.connection.findUnique({ where: { id } });
   if (!conn || (conn.userAId !== uid && conn.userBId !== uid))
     return NextResponse.json({ error: "not found" }, { status: 404 });
+  // 還沒接受的邀請沒有聊天室，也沒有人訂閱
+  if (conn.status !== "connected")
+    return NextResponse.json({ error: "locked" }, { status: 423 });
 
   publish(`connect:${id}`, { type: "typing", userId: uid });
   return NextResponse.json({ ok: true });

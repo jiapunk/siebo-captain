@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
 import type { TeamReport } from "@/lib/types";
-import { prisma as _p } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -58,16 +57,18 @@ export async function GET() {
             senderId: t.messages[0].senderId,
           }
         : null,
+      // accepted：真人看 TeamMember.accepted；模擬隊友一律視為已同意
       members: t.members
         .map((m) => {
           const u = userMap.get(m.userId);
+          const isBot = u?.isBot ?? false;
           return {
             userId: m.userId,
             name: u?.name ?? "?",
             emoji: u?.emoji ?? "?",
-            isBot: u?.isBot ?? false,
+            isBot,
             role: m.role,
-            accepted: m.accepted,
+            accepted: m.accepted || isBot,
             isMe: m.userId === uid,
           };
         })

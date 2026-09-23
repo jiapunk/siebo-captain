@@ -6,6 +6,9 @@ import type { HackathonProfile } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** 送給 LLM 的群聊歷史只取最近幾則（只含 senderId + content，不帶任何其他欄位） */
+export const TEAM_HISTORY_LIMIT = 20;
+
 /** 團隊聊天：選一位模擬隊友回話（輪流），並先送 typing 事件 */
 export function scheduleTeamReply(
   teamId: string,
@@ -19,37 +22,40 @@ export function scheduleTeamReply(
 
       const team = await prisma.team.findUnique({
         where: { id: teamId },
-        include: {
-          members: true,
-          messages: { orderBy: { createdAt: "asc" } },
-        },
+        include: { members: true },
       });
       if (!team || team.status !== "assembled") return;
 
       const memberIds = team.members.map((m) => m.userId);
       const users = await prisma.user.findMany({
-        where: { id: { in: memberIds } },
+        where: { id: { in: memberIds }, isBot: true },
         include: { profile: true },
       });
       const bots = users.filter((u) => u.isBot);
       if (bots.length === 0) return;
 
-      // 輪流：選回話次數最少的隊友
-      const replyCount = new Map<string, number>();
-      for (const m of team.messages) {
-        if (m.senderId !== humanSenderId)
-          replyCount.set(m.senderId, (replyCount.get(m.senderId) ?? 0) + 1);
-      }
+      // 輪流：選回話次數最少的隊友（用 groupBy 計數，不必把整段歷史載入記憶體）
+      const counts = await prisma.teamMessage.groupBy({
+        by: ["senderId"],
+        where: { teamId, senderId: { in: bots.map((b) => b.id) } },
+        _count: { _all: true },
+      });
+      const replyCount = new Map(counts.map((c) => [c.senderId, c._count._all]));
       const bot = bots.sort(
         (a, b) => (replyCount.get(a.id) ?? 0) - (replyCount.get(b.id) ?? 0),
       )[0];
       const profile = bot.profile?.compiled as unknown as HackathonProfile | null;
       if (!profile?.role) return;
 
-      const history = team.messages.map((m) => ({
-        senderId: m.senderId,
-        content: m.content,
-      }));
+      const recent = await prisma.teamMessage.findMany({
+        where: { teamId },
+        orderBy: { createdAt: "desc" },
+        take: TEAM_HISTORY_LIMIT,
+        select: { senderId: true, content: true },
+      });
+      const history = recent
+        .reverse()
+        .map((m) => ({ senderId: m.senderId, content: m.content }));
 
       publish(`team:${teamId}`, { type: "typing", userId: bot.id });
 

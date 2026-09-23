@@ -42,6 +42,29 @@ export interface CompetenceSummary {
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
 
+/**
+ * 能力分公式（純函式）：基準 35
+ *   + 隊伍 ×8（上限 20）+ 聯絡 ×5（上限 15）+ 訊息 ×0.5（上限 10）
+ *   + 有隊伍時 平均隊伍分 ×0.15（上限 15）+ 破冰卡 ×1（上限 5）
+ * 四捨五入後夾在 30–98。
+ */
+export function competenceScore(
+  s: Pick<CompetenceSummary, "teams" | "connections" | "messages" | "icebreakers" | "avgTeamScore">,
+): number {
+  return clamp(
+    Math.round(
+      35 +
+        Math.min(20, s.teams * 8) +
+        Math.min(15, s.connections * 5) +
+        Math.min(10, s.messages * 0.5) +
+        (s.teams > 0 ? Math.min(15, s.avgTeamScore * 0.15) : 0) +
+        Math.min(5, s.icebreakers * 1),
+    ),
+    30,
+    98,
+  );
+}
+
 /** 取多人的能力摘要（單次 groupBy，無 N+1） */
 export async function summarizeLedger(
   userIds: string[],
@@ -81,18 +104,7 @@ export async function summarizeLedger(
   }
 
   for (const s of base.values()) {
-    s.score = clamp(
-      Math.round(
-        35 +
-          Math.min(20, s.teams * 8) +
-          Math.min(15, s.connections * 5) +
-          Math.min(10, s.messages * 0.5) +
-          (s.teams > 0 ? Math.min(15, s.avgTeamScore * 0.15) : 0) +
-          Math.min(5, s.icebreakers * 1),
-      ),
-      30,
-      98,
-    );
+    s.score = competenceScore(s);
     out.set(s.userId, s);
   }
   return out;

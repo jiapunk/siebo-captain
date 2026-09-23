@@ -6,7 +6,7 @@ import { subscribe } from "@/lib/bus";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const uid = await getCurrentUserId();
@@ -31,27 +31,31 @@ export async function GET(
   });
   const userMap = new Map(users.map((u) => [u.id, u]));
 
-  return sseResponse(async (send, signal) => {
-    send({
-      type: "init",
-      me: uid,
-      members: team.members.map((m) => {
-        const u = userMap.get(m.userId);
-        return {
-          userId: m.userId,
-          name: u?.name ?? "?",
-          emoji: u?.emoji ?? "?",
-          isBot: u?.isBot ?? false,
-          role: m.role,
-        };
-      }),
-      messages: team.messages,
-    });
+  return sseResponse(
+    ({ send, onClose }) => {
+      send({
+        type: "init",
+        me: uid,
+        members: team.members.map((m) => {
+          const u = userMap.get(m.userId);
+          return {
+            userId: m.userId,
+            name: u?.name ?? "?",
+            emoji: u?.emoji ?? "?",
+            isBot: u?.isBot ?? false,
+            role: m.role,
+          };
+        }),
+        messages: team.messages,
+      });
 
-    const unsub = subscribe(`team:${id}`, (data: string) => {
-      const evt = JSON.parse(data);
-      if (evt.type === "message" || evt.type === "typing") send(evt);
-    });
-    signal.addEventListener("abort", unsub);
-  });
+      onClose(
+        subscribe(`team:${id}`, (data: string) => {
+          const evt = JSON.parse(data);
+          if (evt.type === "message" || evt.type === "typing") send(evt);
+        }),
+      );
+    },
+    { signal: req.signal, key: uid },
+  );
 }

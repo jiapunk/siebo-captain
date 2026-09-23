@@ -1,22 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  範本：請勿直接複製到 ~/Library/LaunchAgents。
+  用 scripts/evomap-heartbeat-install.sh 產生，會替換：
+    __NODE_BIN__     node 執行檔的絕對路徑（預設 command -v node）
+    __PROJECT_DIR__  專案根目錄的絕對路徑
+    __LOG_PATH__     log 檔（預設 ~/Library/Logs/siebo-evomap-heartbeat.log；超過 1MB 由心跳腳本自動截斷）
+  心跳到 EVOMAP_HEARTBEAT_UNTIL 後自動停止連線（exit 0），但排程本身要自己移除：
+    launchctl unload ~/Library/LaunchAgents/com.siebo.evomap.heartbeat.plist
+-->
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>com.siebo.evomap.heartbeat</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/zsh</string>
-    <string>-lc</string>
-    <string>cd /Users/jiachen/Documents/siebo-captain && /Users/jiachen/.local/bin/node node_modules/tsx/dist/cli.mjs scripts/evomap-heartbeat.ts --once >> /tmp/evomap-heartbeat.log 2>&1</string>
+    <string>__NODE_BIN__</string>
+    <string>__PROJECT_DIR__/node_modules/tsx/dist/cli.mjs</string>
+    <string>scripts/evomap-heartbeat.ts</string>
+    <string>--once</string>
+    <string>--log=__LOG_PATH__</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_DIR__</string>
   <key>StartInterval</key>
   <integer>300</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/evomap-heartbeat.log</string>
+  <string>__LOG_PATH__</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/evomap-heartbeat.log</string>
+  <string>__LOG_PATH__</string>
 </dict>
 </plist>

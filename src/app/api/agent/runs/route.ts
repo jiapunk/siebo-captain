@@ -3,12 +3,16 @@ import { prisma } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/session";
 import type { MatchReport } from "@/lib/types";
 import { partRowsByRun, partsByRun } from "@/lib/swarm";
+import { ensureReaped } from "@/lib/costGuard";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const uid = await getCurrentUserId();
   if (!uid) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // 卡死的 running run（行程重啟留下的）先標成 failed，畫面才不會永遠「對談進行中」
+  await ensureReaped();
 
   const runs = await prisma.matchRun.findMany({
     where: { OR: [{ userAId: uid }, { userBId: uid }] },
