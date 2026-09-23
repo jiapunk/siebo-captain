@@ -1,0 +1,30 @@
+# Live API 证据（:3000 赛博队长，生成时间：2026-09-22 19:36 PDT）
+
+## GET /api/agent/runs（节选）
+completed runs: 5
+  里歐   | JEV  | RULE 75 → 81 | partRows 6
+  老吳   | JEV  | RULE 78 → 92 | partRows 6
+  小綠   | JEV  | RULE 78 → 90 | partRows 6
+  Kiwi | JEV  | RULE 68 → 80 | partRows 6
+  小滿   | JEV  | RULE 71 → 85 | partRows 6
+
+## GET /api/teams
+  team cmucdepcv0 | score 74 | members 3 | signals {'mode': 'competence', 'teamEval': 87, 'competenceAvg': 35}
+  team cmuccwghc0 | score 67 | members 3 | signals {'mode': 'competence', 'teamEval': 77, 'competenceAvg': 35}
+
+## GET /api/network
+  nodes 9 | edges 6 | clustering 0.87 | hubs ['Demo阿飛', 'Kiwi', '小滿']
+  sim hypotheses: 16
+
+## GET /api/evomap
+{
+    "enabled": true,
+    "linked": true,
+    "nodeId": "node_74fc\u2026",
+    "base": "https://evomap.ai",
+    "hubStats": {
+        "total_assets": 5016768,
+        "promoted_assets": 1718192,
+
+## GET /api/events/current
+  EvoTavern | day 3/4 | live True | members 9

@@ -1,0 +1,42 @@
+# 静态质量闸门（生成时间：2026-09-22 19:34 PDT，commit：be773f2）
+
+## tsc --noEmit
+exit=0（无输出）
+
+## npm run lint
+
+✖ 11 problems (0 errors, 11 warnings)
+
+
+## npm run build
+✓ Running next.config.ts took 12ms
+✓ Compiled successfully in 598ms
+  Generating static pages using 17 workers (0/13) ...
+  Generating static pages using 17 workers (3/13) 
+
+## prisma migrate status
+
+Database schema is up to date!
+
+## 环境（不含机密值）
+DATABASE_URL="file:./dev.db"
+LLM_PROVIDER=hybrid
+LLM_BASE_URL=https://opencode.ai/zen/go/v1
+LLM_API_KEY=<67 chars, masked>
+LLM_MODEL=deepseek-v4.1-flash
+AUTH_DEV_LINKS=on
+EVENT_NAME="EvoTavern"
+EVENT_CODE=EVOTAVERN
+EVENT_STARTS_AT=2026-09-21T09:00:00+08:00
+EVENT_ENDS_AT=2026-09-24T23:59:59+08:00
+DECISION_PROVIDER=jev
+JEV_API_KEY=<108 chars, masked>
+JEV_MODEL=<10 chars, masked>
+JEV_TIMEOUT_MS=6000
+EVOMAP_NODE_ID=node_74fc6e393a8171eb
+EVOMAP_NODE_SECRET=<64 chars, masked>
+EVOMAP_ENABLED=1
+
+## 机密扫描（追踪文件中的真实密钥）
+apikey_2236 命中: 0
+tracked .env 文件数: 0

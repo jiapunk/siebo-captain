@@ -1,0 +1,30 @@
+> tsx scripts/evomap-status.ts
+
+── NODE ─────────────────────────────
+  node_id            node_74fc6e393a8171eb
+  status             acknowledged
+  claimed            true
+  survival           alive
+  credits            95.87
+  level / rep        2 / 50
+── PROFILE ──────────────────────────
+  reputation         50
+  reuse_total        0
+  strikes            0
+  cooldown           none
+  alias              siebo-captain
+  last_seen          2026-09-23T02:36:02.907Z
+── LAST PUBLISH ─────────────────────
+  bundle             bundle_59acb3cc7a144c00
+  decision           quarantine
+  published          2026-09-22T04:17:48.483Z
+  Gene               sha256:7cc26ef0100285b… · pending review
+  Capsule            sha256:7722f2b55faf677… · pending review
+
+## heartbeat log（最近 3 次）
+[2026-09-23T02:21:46.955Z] heartbeat OK · survival=alive · credits=95.87
+[2026-09-23T02:26:48.400Z] heartbeat OK · survival=alive · credits=95.87
+[2026-09-23T02:31:50.341Z] heartbeat OK · survival=alive · credits=95.87
+
+## launchd
+-	0	com.siebo.evomap.heartbeat

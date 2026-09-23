@@ -1,0 +1,16 @@
+# Demo 物料 QA 证据（生成时间：2026-09-22 19:42 PDT）
+
+## QR 解码（jsQR 实扫）
+PASS siebo-captain: https://github.com/jiapunk/siebo-captain
+PASS submission: https://github.com/jiapunk/siebo-captain/blob/main/SUBMISSION.md
+PASS surrodate: https://github.com/jiapunk/surrodate
+
+## 简报复核
+  deck.html: slides=12 | images=7 | allLoaded=true | consoleErrors=0
+  deck-zhcn.html: slides=12 | images=7 | allLoaded=true | consoleErrors=0
+  poster.html: slides=0 | images=3 | allLoaded=true | consoleErrors=0
+
+## PDF 页数
+  deck.pdf: 12 页
+  deck-zhcn.pdf: 12 页
+  poster.pdf: 1 页

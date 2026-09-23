@@ -1,0 +1,27 @@
+# 端到端测试证据（生成时间：2026-09-22 19:37 PDT，commit：be773f2）
+
+命令：npx playwright test
+说明：测试会重置 demo 数据库（Playwright 固定 LLM_PROVIDER=mock / JEV_API_KEY=""，确保可复现）
+
+  ✓   3 tests/contacts.spec.ts:8:5 › 持續聯絡：破冰卡保持聯絡 → 隊伍頁清單 → 一對一私訊 (16.3s)
+[decide] jev 不可用（HTTP 401 {"detail":{"error_type":"authentication_error","message":"Cannot authenticate with the server. Please check your API key）→ 下一層
+  ✓   4 tests/decision.spec.ts:9:5 › 決策層 fallback：無效 Jev key 時改用本機規則 (1.3s)
+  ✓   5 tests/decision.spec.ts:20:5 › 三段鏈順序：有 LLM key 時 Jev→LLM→規則，無 key 時純規則 (531ms)
+  ✓   6 tests/decision.spec.ts:44:5 › 決策層本機模式：未設定 key 時直接使用規則 (220ms)
+  ✓   7 tests/dynamic-i18n.spec.ts:4:5 › 動態內容四語系：訪談回覆與互盤報告 (103ms)
+  ✓   8 tests/evomap.spec.ts:8:5 › EvoMap 預設 opt-out：狀態可查、動作被拒、UI 標示 OFF (739ms)
+
+  ✓   9 tests/hackathon.spec.ts:9:5 › 組隊局：隊長出發 → 隊伍提案 → 加入 → 團隊聊天 (18.9s)
+
+  ✓  10 tests/i18n-content.spec.ts:8:5 › 動態內容多語系：EN 模式下隊長對談與報告為英文 (10.0s)
+  ✓  11 tests/i18n.spec.ts:3:5 › 多語系：繁中預設 → EN → 简中 → 日本語，重載後保留 (435ms)
+
+  ✓  12 tests/mobile.spec.ts:10:5 › 行動裝置：底部 Dock 導覽與單欄佈局 (1.7s)
+
+  ✓  13 tests/network.spec.ts:9:5 › 帳本記帳 → 網絡圖 → 社交/能力信號對照 (14.5s)
+
+  ✓  14 tests/register-journey.spec.ts:14:5 › 註冊 → 驗證 → 訪談 → 組隊 → 聊天 → 重登 → 密碼重設 (20.3s)
+
+  ✓  15 tests/swarm.spec.ts:13:5 › 蜂群 Part 覆蓋 + 假設評估式組隊 (10.3s)
+
+  15 passed (1.9m)
